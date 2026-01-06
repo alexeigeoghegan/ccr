@@ -9,7 +9,7 @@ from datetime import datetime
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 1. PAGE CONFIGURATION ---
-st.set_page_config(page_title="MASTER index", layout="wide")
+st.set_page_config(page_title="MASTER Index", layout="wide")
 
 st.markdown("""
     <style>
@@ -25,6 +25,7 @@ st.markdown("""
 
 # --- 2. CORE FUNCTIONS ---
 def norm_bipolar(val, bound, inv=False):
+    """Maps range [-bound, +bound] to [0, 100] Risk."""
     try:
         val = float(val)
         score = ((val - (-bound)) / (bound - (-bound))) * 100
@@ -44,6 +45,7 @@ def create_mini_dial(label, value, weight):
 
 @st.cache_data(ttl=3600)
 def get_live_data():
+    # 2026 Monthly Strategy Snapshot
     d = {'btc': 94230, 'dxy': 98.60, 'yield': 4.18, 'oil': 57.2, 'fgi': 48, 'cbbi': 54, 
          'm2_mom': 0.65, 'etf_mom': 1.1, 'stable_mom': 2.4, 'fund': 0.011, 'oi_mom': 4.2}
     try:
@@ -51,11 +53,12 @@ def get_live_data():
         def calc_mom(col):
             curr, prev = data[col].iloc[-1], data[col].iloc[-22]
             return ((curr - prev) / prev) * 100, curr
-        d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': data["DX-Y.NYB"].iloc[-1], 'yield': data["^TNX"].iloc[-1], 'oil': data["CL=F"].iloc[-1]})
-        d['dxy_mom'], _ = calc_mom("DX-Y.NYB")
-        d['yld_mom'], _ = calc_mom("^TNX")
-        d['oil_mom'], _ = calc_mom("CL=F")
-    except: pass
+        dxy_m, dxy_c = calc_mom("DX-Y.NYB")
+        yld_m, yld_c = calc_mom("^TNX")
+        oil_m, oil_c = calc_mom("CL=F")
+        d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': dxy_c, 'yield': yld_c, 'oil': oil_c, 'dxy_mom': dxy_m, 'yld_mom': yld_m, 'oil_mom': oil_m})
+    except:
+        d.update({'dxy_mom': 0.46, 'yld_mom': 0.72, 'oil_mom': 3.10})
     return d
 
 # --- 3. MASTER SCORING ENGINE ---
@@ -80,30 +83,35 @@ else: act_label, act_color = "Take Profits", "#ef4444"
 with st.sidebar:
     st.title("Drivers")
     st.markdown(f"**Updated:** {datetime.now().strftime('%d %b %Y')}")
+    
     st.markdown('<div class="sidebar-header">Macro (M)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">DXY Index</p><p class="data-value">{d["dxy"]:.2f} ({d.get("dxy_mom",0):+.2f}%)</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">10Y Yield</p><p class="data-value">{d["yield"]:.2f}% ({d.get("yld_mom",0):+.2f}%)</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Global M2 MoM</p><p class="data-value">{d["m2_mom"]}%</p>', unsafe_allow_html=True)
+
     st.markdown('<div class="sidebar-header">Adoption (A)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">ETF Inflow MoM</p><p class="data-value">{d["etf_mom"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Stablecoin Growth</p><p class="data-value">{d["stable_mom"]}%</p>', unsafe_allow_html=True)
+
     st.markdown('<div class="sidebar-header">Sentiment (S)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Fear & Greed</p><p class="data-value">{d["fgi"]}</p>', unsafe_allow_html=True)
+
     st.markdown('<div class="sidebar-header">Technicals (T)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">CBBI Index</p><p class="data-value">{d["cbbi"]}</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">BTC Price</p><p class="data-value">${d["btc"]:,.0f}</p>', unsafe_allow_html=True)
+
     st.markdown('<div class="sidebar-header">Exposure (E)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Funding Rate</p><p class="data-value">{d["fund"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Open Interest MoM</p><p class="data-value">{d["oi_mom"]:+.2f}%</p>', unsafe_allow_html=True)
 
 # --- 5. MAIN UI ---
-st.header("MASTER INDEX", text_alignment="center")
+st.markdown("<h1 style='text-align: center;'>MASTER INDEX</h1>", unsafe_allow_html=True)
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.plotly_chart(create_mini_dial("MACRO (M)", risk_m, "40%"), use_container_width=True)
 c2.plotly_chart(create_mini_dial("ADOPTION (A)", risk_a, "10%"), use_container_width=True)
 c3.plotly_chart(create_mini_dial("SENTIMENT (S)", risk_s, "20%"), use_container_width=True)
-c4.plotly_chart(create_mini_dial("TECHNIC. (T)", risk_t, "20%"), use_container_width=True)
+c4.plotly_chart(create_mini_dial("TECHNICALS (T)", risk_t, "20%"), use_container_width=True)
 c5.plotly_chart(create_mini_dial("EXPOSURE (E)", risk_e, "10%"), use_container_width=True)
 
 st.markdown("---")
@@ -133,11 +141,11 @@ st.markdown("---")
 st.subheader("Threshold Specifications")
 st.markdown(f"""
 <div class="logic-box">
-    <b>(M) Macro (40%):</b> 50% Financial Momentum (DXY, Yields, Oil) / 50% Global Liquidity (M2).<br>
-    <b>(A) Adoption (10%):</b> Blends institutional demand (BTC ETF Flows) and crypto-native liquidity (Stablecoin Supply).<br>
-    <b>(S) Sentiment (20%):</b> Direct 1:1 mapping of the Fear & Greed Index to identify psychological extremes.<br>
-    <b>(T) Technicals (20%):</b> Maps the CBBI Index 1:1, aggregating on-chain oscillators to track cycle maturity.<br>
-    <b>(E) Exposure (10%):</b> Monitors structural leverage via Funding Rates and Open Interest (OI) MoM change.
+    <b>(M) Macro (40%):</b> 50% Financial Momentum (DXY, Yields, Oil) / 50% Global Liquidity (M2). Uses Bipolar scale (±{B_DXY}% DXY, ±{B_YLD}% Yields).<br><br>
+    <b>(A) Adoption (10%):</b> Blends institutional demand (BTC ETF Flows) and crypto-native liquidity (Stablecoin Supply). Uses ±5% bipolar scale.<br><br>
+    <b>(S) Sentiment (20%):</b> Direct 1:1 mapping of the Fear & Greed Index to identify psychological extremes.<br><br>
+    <b>(T) Technicals (20%):</b> Maps the CBBI Index 1:1, aggregating multiple on-chain oscillators to track overall cycle maturity.<br><br>
+    <b>(E) Exposure (10%):</b> Monitors structural leverage via Funding Rates (0% to {S_FND}%) and Open Interest (OI) MoM change (±{B_OI}%).
 </div>
 """, unsafe_allow_html=True)
 
