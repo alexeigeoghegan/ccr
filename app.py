@@ -17,9 +17,10 @@ st.markdown("""
     .stAlert { border: none; padding: 25px; border-radius: 12px; font-size: 28px; font-weight: 800; text-align: center; color: white !important; }
     .logic-box { background-color: #1c2128; padding: 20px; border-radius: 10px; border: 1px solid #30363d; margin-top: 10px; font-size: 14px; line-height: 1.7; }
     .instr-box { background-color: #0d1117; padding: 20px; border-radius: 8px; margin-top: 20px; font-size: 15px; border: 1px solid #30363d; border-top: 4px solid #00ffcc; text-align: center; }
-    .sidebar-header { font-size: 16px; font-weight: 700; color: #00ffcc; margin-top: 20px; border-bottom: 1px solid #30363d; padding-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
-    .data-label { color: #8b949e; font-size: 14px; margin-bottom: 2px; }
-    .data-value { color: #ffffff; font-family: 'Courier New', monospace; font-size: 16px; font-weight: bold; margin-bottom: 10px; }
+    .sidebar-header { font-size: 16px; font-weight: 700; color: #00ffcc; margin-top: 15px; border-bottom: 1px solid #30363d; padding-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+    .sidebar-sub { font-size: 13px; font-weight: 600; color: #8b949e; margin-top: 10px; text-transform: capitalize; }
+    .data-label { color: #8b949e; font-size: 12px; margin-bottom: 0px; }
+    .data-value { color: #ffffff; font-family: 'Courier New', monospace; font-size: 15px; font-weight: bold; margin-bottom: 8px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -77,24 +78,36 @@ if risk_score < 35: act_label, act_color, g_color = "ACCUMULATE", "#008060", "#0
 elif risk_score < 70: act_label, act_color, g_color = "HOLD", "#d97706", "#fbbf24"
 else: act_label, act_color, g_color = "TAKE PROFITS / HEDGE", "#b91c1c", "#ef4444"
 
-# --- 4. SIDEBAR (MASTER FEEDS) ---
+# --- 4. SIDEBAR (DRIVERS BY PILLAR) ---
 with st.sidebar:
-    st.title("MASTER Feeds")
+    st.title("Drivers")
     st.markdown(f"**Updated:** {datetime.now().strftime('%d %b %Y')}")
-    st.markdown('<div class="sidebar-header">Macro Drivers</div>', unsafe_allow_html=True)
+    
+    # M - Macro
+    st.markdown('<div class="sidebar-header">Macro (M)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">DXY Index</p><p class="data-value">{d["dxy"]:.2f} ({d.get("dxy_mom",0):+.2f}%)</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">10Y Yield</p><p class="data-value">{d["yield"]:.2f}% ({d.get("yld_mom",0):+.2f}%)</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="data-label">Oil MoM</p><p class="data-value">{d.get("oil_mom",0):+.2f}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Global M2 MoM</p><p class="data-value">{d["m2_mom"]}%</p>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-header">Adoption & Exposure</div>', unsafe_allow_html=True)
+    # A - Adoption
+    st.markdown('<div class="sidebar-header">Adoption (A)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">ETF Inflow MoM</p><p class="data-value">{d["etf_mom"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Stablecoin Growth</p><p class="data-value">{d["stable_mom"]}%</p>', unsafe_allow_html=True)
+
+    # S - Sentiment
+    st.markdown('<div class="sidebar-header">Sentiment (S)</div>', unsafe_allow_html=True)
+    st.markdown(f'<p class="data-label">Fear & Greed</p><p class="data-value">{d["fgi"]}</p>', unsafe_allow_html=True)
+
+    # T - Technicals
+    st.markdown('<div class="sidebar-header">Technicals (T)</div>', unsafe_allow_html=True)
+    st.markdown(f'<p class="data-label">CBBI Index</p><p class="data-value">{d["cbbi"]}</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="data-label">BTC Price</p><p class="data-value">${d["btc"]:,.0f}</p>', unsafe_allow_html=True)
+
+    # E - Exposure
+    st.markdown('<div class="sidebar-header">Exposure (E)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Funding Rate</p><p class="data-value">{d["fund"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Open Interest MoM</p><p class="data-value">{d["oi_mom"]:+.2f}%</p>', unsafe_allow_html=True)
-
-    st.markdown('<div class="sidebar-header">Other Drivers</div>', unsafe_allow_html=True)
-    st.markdown(f'<p class="data-label">Fear & Greed</p><p class="data-value">{d["fgi"]}</p>', unsafe_allow_html=True)
-    st.markdown(f'<p class="data-label">CBBI Index</p><p class="data-value">{d["cbbi"]}</p>', unsafe_allow_html=True)
 
 # --- 5. MAIN UI ---
 st.title("MASTER Crypto Risk Index")
@@ -121,7 +134,7 @@ with col_action:
     st.write("##")
     st.markdown(f'<div class="stAlert" style="background-color:{act_color};">{act_label}</div>', unsafe_allow_html=True)
 
-# Consolidated Methodology Box
+# Threshold Specification Box
 st.markdown("---")
 st.subheader("Threshold Specifications")
 st.markdown(f"""
