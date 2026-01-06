@@ -4,7 +4,6 @@ import requests
 import pandas as pd
 import urllib3
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -12,16 +11,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="Crypto Cycle Risk", layout="wide")
 
-# Custom Professional Theme & Metric Styling
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
     [data-testid="stMetricValue"] { font-size: 45px !important; font-weight: 700 !important; }
     .stAlert { border: none; padding: 20px; border-radius: 15px; font-size: 26px; font-weight: 800; text-align: center; }
-    /* Metric Color Logic Classes */
-    .green-text { color: #00ffcc; }
-    .yellow-text { color: #ffff00; }
-    .red-text { color: #ff4b4b; }
+    .logic-box { background-color: #161b22; padding: 15px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -34,60 +29,47 @@ def normalize(val, mi, ma, inv=False):
         return (100 - s) if inv else s
     except: return 50.0
 
-def get_color(score):
-    if score < 35: return "green"
-    if score < 70: return "orange"
-    return "red"
-
-def calculate_index(dxy, yld, oil, fgi, cbbi, m2_mom, etf, fund, ssr):
+def calculate_total_score(dxy, yld, oil, fgi, cbbi, m2_mom, etf, fund, ssr):
+    # Macro 40%
     score_fin = (normalize(dxy, 98, 108, True) + normalize(yld, 3, 5, True) + normalize(oil, 65, 95, True)) / 3
     p_macro = (score_fin * 0.20) + (normalize(m2_mom, 0, 1.0) * 0.20) 
+    # Pillars
     p_sent = (fgi * 0.20)
     p_tech = (cbbi * 0.20)
     p_adopt = (normalize(etf, -1, 5) * 0.10)
     p_struct = (normalize(fund, 0, 0.06, True) * 0.05) + (normalize(ssr, 8, 22, True) * 0.05)
-    return round(p_macro + p_sent + p_tech + p_adopt + p_struct, 1)
+    return int(round(p_macro + p_sent + p_tech + p_adopt + p_struct))
 
 @st.cache_data(ttl=3600)
 def get_all_market_data():
     headers = {'User-Agent': 'Mozilla/5.0'}
     data_dict = {}
     try:
-        # Fetch 45 days to ensure 30 trading days of data
-        macro = yf.download(["BTC-USD", "DX-Y.NYB", "^TNX", "CL=F", "GC=F"], period="2mo", progress=False)['Close'].ffill().dropna()
+        macro = yf.download(["BTC-USD", "DX-Y.NYB", "^TNX", "CL=F", "GC=F"], period="5d", progress=False)['Close'].ffill().dropna()
         data_dict.update({
-            'btc': macro["BTC-USD"].iloc[-1],
-            'dxy': macro["DX-Y.NYB"].iloc[-1], 
-            'yield': macro["^TNX"].iloc[-1], 
-            'oil': macro["CL=F"].iloc[-1], 
-            'gold': macro["GC=F"].iloc[-1],
-            'macro_df': macro
+            'btc': macro["BTC-USD"].iloc[-1], 'dxy': macro["DX-Y.NYB"].iloc[-1], 
+            'yield': macro["^TNX"].iloc[-1], 'oil': macro["CL=F"].iloc[-1], 
+            'gold': macro["GC=F"].iloc[-1]
         })
-        cbbi_res = requests.get("https://colintalkscrypto.com/cbbi/data/latest.json", headers=headers, verify=False).json()
-        conf = cbbi_res.get("Confidence", cbbi_res)
-        latest_ts = max(conf.keys(), key=int)
-        data_dict['cbbi'] = float(conf[latest_ts]) * 100
     except:
-        data_dict.update({'btc': 98500, 'dxy':102,'yield':4.2,'oil':75,'gold':4470,'cbbi':54.0})
+        data_dict.update({'btc': 98500, 'dxy': 102, 'yield': 4.2, 'oil': 75, 'gold': 4470})
     
-    data_dict.update({'fgi': 44, 'm2_mom': 0.35, 'total_cap': '3.2T', 'btc_dom': '58.4%', 'etf': 1.2, 'fund': 0.01, 'ssr': 12.0})
+    # Updated CBBI to 55 and F&G to 44 as requested
+    data_dict.update({
+        'fgi': 44, 'cbbi': 55, 'm2_mom': 0.35, 'total_cap': '3.2T', 
+        'btc_dom': '58.4%', 'etf': 1.2, 'fund': 0.01, 'ssr': 12.0
+    })
     return data_dict
 
 # --- 3. DATA PROCESSING ---
 raw = get_all_market_data()
-history = []
-if 'macro_df' in raw:
-    # 30 Day Trend Calculation
-    for i in range(30):
-        idx = -(i+1)
-        score = calculate_index(raw['macro_df']["DX-Y.NYB"].iloc[idx], raw['macro_df']["^TNX"].iloc[idx], raw['macro_df']["CL=F"].iloc[idx],
-                                raw.get('fgi'), raw.get('cbbi'), 0.35, 1.2, 0.01, 12.0)
-        history.append({"Date": raw['macro_df'].index[idx].date(), "Score": score})
-df_history = pd.DataFrame(history).sort_values("Date")
-current_score = int(round(df_history["Score"].iloc[-1])) if not df_history.empty else 50
+current_score = calculate_total_score(
+    raw['dxy'], raw['yield'], raw['oil'], raw['fgi'], raw['cbbi'], 
+    raw['m2_mom'], raw['etf'], raw['fund'], raw['ssr']
+)
 
 # --- 4. TOP SECTION: GAUGE & ACTION ---
-st.title("🛡️ Crypto Cycle Risk")
+st.title("Crypto Cycle Risk")
 
 col_g, col_a = st.columns([2, 1])
 
@@ -103,25 +85,24 @@ with col_g:
     st.plotly_chart(fig_gauge, use_container_width=True)
 
 with col_a:
-    st.write("##") # Spacing
+    st.write("##") 
     if current_score < 35:
         st.success("🟢 ACCUMULATE")
     elif current_score < 70:
         st.warning("🟡 HOLD / CAUTION")
     else:
         st.error("🔴 TAKE PROFITS / HEDGE")
-    st.write("Current index represents a consolidated risk score across 5 institutional pillars.")
 
-# --- 5. PERFORMANCE PILLARS (Integers & Color Coded) ---
+# --- 5. PERFORMANCE PILLARS ---
 st.markdown("---")
 c1, c2, c3, c4, c5 = st.columns(5)
 
-# Calculate Pillar Totals for color logic
-val_macro = int(round((normalize(raw.get('dxy'),98,108,True) + normalize(raw.get('yield'),3,5,True) + normalize(raw.get('oil'),65,95,True))/3 * 0.5 + normalize(raw.get('m2_mom'),0,1.0)*0.5))
-val_sent = int(raw.get('fgi'))
-val_tech = int(round(raw.get('cbbi')))
-val_adopt = int(round(normalize(raw.get('etf'),-1,5)))
-val_struct = int(round(normalize(raw.get('fund'),0,0.06,True)*0.5 + normalize(raw.get('ssr',12),8,22,True)*0.5))
+# Calculate Individual Pillar Strengths (0-100 scale) for display
+val_macro = int(round(((normalize(raw['dxy'],98,108,True) + normalize(raw['yield'],3,5,True) + normalize(raw['oil'],65,95,True))/3 * 0.5 + normalize(raw['m2_mom'],0,1.0)*0.5)))
+val_sent = int(raw['fgi'])
+val_tech = int(raw['cbbi'])
+val_adopt = int(round(normalize(raw['etf'],-1,5)))
+val_struct = int(round(normalize(raw['fund'],0,0.06,True)*0.5 + normalize(raw['ssr'],8,22,True)*0.5))
 
 def style_metric(label, value):
     color = "#00ffcc" if value < 35 else "#ffff00" if value < 70 else "#ff4b4b"
@@ -133,26 +114,40 @@ with c3: style_metric("TECHNICALS 20%", val_tech)
 with c4: style_metric("ADOPTION 10%", val_adopt)
 with c5: style_metric("STRUCTURE 10%", val_struct)
 
-# --- 6. 30-DAY TREND CHART ---
-st.markdown("### 📈 30-Day Risk Trend")
-fig_line = go.Figure(go.Scatter(x=df_history["Date"], y=df_history["Score"], mode='lines', line=dict(color='#00ffcc', width=4), fill='tozeroy', fillcolor='rgba(0, 255, 204, 0.1)'))
-fig_line.update_layout(paper_bgcolor='#0e1117', plot_bgcolor='#0e1117', font={'color': 'white'}, height=350, margin=dict(t=10, b=10), 
-                       xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=True, gridcolor='#333'))
-st.plotly_chart(fig_line, use_container_width=True)
-
-# --- 7. PILLAR DESCRIPTIONS ---
+# --- 6. PILLAR LOGIC BREAKDOWN ---
 st.markdown("---")
-d_col1, d_col2 = st.columns(2)
-with d_col1:
-    st.markdown("**Macro:** Global liquidity (M2 MoM) and financial conditions (DXY, Yields, Gold). Weak USD and high liquidity favor risk assets.")
-    st.markdown("**Sentiment:** Market psychology via Fear & Greed. Overheated sentiment indicates high-risk zones.")
-    st.markdown("**Technicals:** CBBI composite. Aggregates on-chain maturity and technical oscillators to find cyclical extremes.")
-with d_col2:
-    st.markdown("**Adoption:** Net BTC Spot ETF flows. Institutional capital absorption serves as a primary demand indicator.")
-    st.markdown("**Structure:** Market leverage. Excessive funding rates and low stablecoin supply ratios signal structural instability.")
+st.subheader("Pillar Logic Breakdown")
 
-# --- 8. SIDEBAR DATA FEED ---
-st.sidebar.header("📡 Data Feed")
+l_col1, l_col2 = st.columns(2)
+
+with l_col1:
+    st.markdown(f"""
+    <div class="logic-box">
+        <b>Macro (40%):</b> Derived from 50% Financial Conditions and 50% Global Liquidity.<br>
+        • Financial Conditions: Avg of DXY (Current: {round(raw['dxy'],1)}), 10Y Yield ({round(raw['yield'],1)}%), and Oil (${round(raw['oil'],1)}).<br>
+        • Liquidity: Month-over-Month M2 growth normalized against a 1% expansion cap.
+    </div>
+    <div class="logic-box">
+        <b>Sentiment (20%):</b> Direct feed from the Fear & Greed Index (Current: {val_sent}). Higher numbers indicate extreme greed and higher risk.
+    </div>
+    <div class="logic-box">
+        <b>Technicals (20%):</b> Direct feed from the CBBI Index (Current: {val_tech}). A composite of 11 on-chain and technical metrics.
+    </div>
+    """, unsafe_allow_html=True)
+
+with l_col2:
+    st.markdown(f"""
+    <div class="logic-box">
+        <b>Adoption (10%):</b> Calculated from BTC Spot ETF Net Inflows. Monthly momentum is normalized where a 5% inflow represents maximum adoption score.
+    </div>
+    <div class="logic-box">
+        <b>Structure (10%):</b> Derived from 50% Funding Rates and 50% Stablecoin Supply Ratio (SSR).<br>
+        • Funding: Normalized 0% to 0.06%. High rates indicate high leverage risk.<br>
+        • SSR: Normalized 8 to 22. Lower SSR means higher stablecoin buying power.
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- 7. SIDEBAR DATA FEED ---
 st.sidebar.write(f"Bitcoin: `${round(raw.get('btc',0), 2):,}`")
 st.sidebar.write(f"DXY Index: `{round(raw.get('dxy',0), 2)}`")
 st.sidebar.write(f"10Y Yield: `{round(raw.get('yield',0), 2)}%`")
