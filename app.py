@@ -14,7 +14,7 @@ st.set_page_config(page_title="MASTER Crypto Risk Index", layout="wide")
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #ffffff; }
-    .stAlert { border: none; padding: 20px; border-radius: 12px; font-size: 24px; font-weight: 800; text-align: center; color: white !important; }
+    .stAlert { border: none; padding: 25px; border-radius: 12px; font-size: 28px; font-weight: 800; text-align: center; color: white !important; }
     .logic-box { background-color: #1c2128; padding: 18px; border-radius: 10px; border: 1px solid #30363d; margin-bottom: 12px; font-size: 14px; line-height: 1.6; min-height: 180px; }
     .instr-box { background-color: #0d1117; padding: 20px; border-radius: 8px; margin: 20px 0; font-size: 15px; border: 1px solid #30363d; border-top: 4px solid #00ffcc; text-align: center; }
     .sidebar-header { font-size: 16px; font-weight: 700; color: #00ffcc; margin-top: 20px; border-bottom: 1px solid #30363d; padding-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
@@ -77,7 +77,7 @@ if risk_score < 35: act_label, act_color, g_color = "ACCUMULATE", "#008060", "#0
 elif risk_score < 70: act_label, act_color, g_color = "HOLD", "#d97706", "#fbbf24"
 else: act_label, act_color, g_color = "TAKE PROFITS / HEDGE", "#b91c1c", "#ef4444"
 
-# --- 4. SIDEBAR (DETAILED DATA FEEDS) ---
+# --- 4. SIDEBAR (MASTER FEEDS) ---
 with st.sidebar:
     st.title("MASTER Feeds")
     st.markdown(f"**Updated:** {datetime.now().strftime('%d %b %Y')}")
@@ -109,7 +109,7 @@ with st.sidebar:
 # --- 5. MAIN UI ---
 st.title("MASTER Crypto Risk Index")
 
-# Top Row: Mini Dials
+# Top Row: Mini Dials (M A S T E)
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.plotly_chart(create_mini_dial("MACRO (M)", risk_m), use_container_width=True)
 c2.plotly_chart(create_mini_dial("ADOPTION (A)", risk_a), use_container_width=True)
@@ -124,20 +124,16 @@ col_gauge, col_action = st.columns([1.8, 1])
 with col_gauge:
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=risk_score,
+        title={'text': "RISK", 'font': {'size': 24, 'color': '#8b949e', 'weight': 'bold'}},
         gauge={'axis': {'range': [0, 100], 'tickcolor': "#8b949e"}, 'bar': {'color': g_color}, 'bgcolor': "rgba(0,0,0,0)",
                'steps': [{'range': [0, 35], 'color': 'rgba(0, 255, 204, 0.1)'}, {'range': [35, 70], 'color': 'rgba(251, 191, 36, 0.1)'}, {'range': [70, 100], 'color': 'rgba(239, 68, 68, 0.1)'}]}))
-    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "#ffffff"}, height=350, margin=dict(t=0, b=0))
+    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "#ffffff"}, height=380, margin=dict(t=50, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
 with col_action:
     st.write("##")
+    st.write("##")
     st.markdown(f'<div class="stAlert" style="background-color:{act_color};">{act_label}</div>', unsafe_allow_html=True)
-    st.markdown(f"""
-        <div style="padding-top: 25px; text-align: center;">
-            <h3 style="color: #8b949e; margin-bottom: 0;">TOTAL RISK</h3>
-            <h1 style="font-size: 64px; margin-top: 0;">{risk_score}</h1>
-        </div>
-    """, unsafe_allow_html=True)
 
 # Bottom Row: Detailed Methodology
 st.markdown("---")
@@ -145,12 +141,12 @@ st.subheader("MASTER Methodology & Thresholds")
 m1, m2, m3 = st.columns(3)
 with m1:
     st.markdown(f"""<div class="logic-box"><b>(M) MACRO:</b> 50% Financial Momentum / 50% Liquidity.<br>
-    Calculated as a Bipolar Scale where <b>±{B_DXY}% DXY</b>, <b>±{B_YLD}% Yields</b>, and <b>±{B_OIL}% Oil</b> represent the 0-100 risk bounds. 
+    Uses a Bipolar Scale where <b>±{B_DXY}% DXY</b>, <b>±{B_YLD}% Yields</b>, and <b>±{B_OIL}% Oil</b> represent the 0-100 risk bounds. 
     Liquidity (M2) is inverted: a <b>+{B_M2}%</b> growth results in 0 risk, while a <b>-{B_M2}%</b> contraction triggers 100 risk.</div>""", unsafe_allow_html=True)
     
-    st.markdown(f"""<div class="logic-box"><b>(A) ADOPTION:</b> Blends institutional and native liquidity.<br>
+    st.markdown(f"""<div class="logic-box"><b>(A) ADOPTION:</b> Blends institutional and native demand.<br>
     Scores 50% on <b>BTC ETF Net Inflows</b> (±{B_ETF}% bound) and 50% on <b>Stablecoin Supply Expansion</b> (±{B_STB}% bound). 
-    Inflows/Expansion at or above the upper bound result in 0 risk, signaling high demand.</div>""", unsafe_allow_html=True)
+    Expansion at or above the upper bound result in 0 risk, signaling high capital absorption.</div>""", unsafe_allow_html=True)
 
 with m2:
     st.markdown(f"""<div class="logic-box"><b>(S) SENTIMENT:</b> Uses the Crypto Fear & Greed Index.<br>
