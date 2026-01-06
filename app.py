@@ -9,11 +9,12 @@ from datetime import datetime
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 1. PAGE CONFIGURATION ---
-st.set_page_config(page_title="MASTER Crypto Risk Index", layout="wide")
+st.set_page_config(page_title="MASTER index", layout="wide")
 
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #ffffff; }
+    .stAlert { border: none; padding: 25px; border-radius: 12px; font-size: 28px; font-weight: 800; text-align: center; color: white !important; }
     .logic-box { background-color: #1c2128; padding: 20px; border-radius: 10px; border: 1px solid #30363d; margin-top: 10px; font-size: 14px; line-height: 1.7; }
     .instr-box { background-color: #0d1117; padding: 20px; border-radius: 8px; margin-top: 20px; font-size: 15px; border: 1px solid #30363d; border-top: 4px solid #00ffcc; text-align: center; }
     .sidebar-header { font-size: 16px; font-weight: 700; color: #00ffcc; margin-top: 15px; border-bottom: 1px solid #30363d; padding-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
@@ -50,12 +51,11 @@ def get_live_data():
         def calc_mom(col):
             curr, prev = data[col].iloc[-1], data[col].iloc[-22]
             return ((curr - prev) / prev) * 100, curr
-        dxy_m, dxy_c = calc_mom("DX-Y.NYB")
-        yld_m, yld_c = calc_mom("^TNX")
-        oil_m, oil_c = calc_mom("CL=F")
-        d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': dxy_c, 'yield': yld_c, 'oil': oil_c, 'dxy_mom': dxy_m, 'yld_mom': yld_m, 'oil_mom': oil_m})
-    except:
-        d.update({'dxy_mom': 0.46, 'yld_mom': 0.72, 'oil_mom': 3.10})
+        d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': data["DX-Y.NYB"].iloc[-1], 'yield': data["^TNX"].iloc[-1], 'oil': data["CL=F"].iloc[-1]})
+        d['dxy_mom'], _ = calc_mom("DX-Y.NYB")
+        d['yld_mom'], _ = calc_mom("^TNX")
+        d['oil_mom'], _ = calc_mom("CL=F")
+    except: pass
     return d
 
 # --- 3. MASTER SCORING ENGINE ---
@@ -72,7 +72,6 @@ risk_e = int(round(risk_e_fnd * 0.5 + risk_e_oi * 0.5))
 
 risk_score = int(round((risk_m*W_M) + (risk_s*W_S) + (risk_t*W_T) + (risk_a*W_A) + (risk_e*W_E)))
 
-# Action Labeling
 if risk_score <= 35: act_label, act_color = "Accumulate", "#00ffcc"
 elif risk_score <= 70: act_label, act_color = "Hold", "#fbbf24"
 else: act_label, act_color = "Take Profits", "#ef4444"
@@ -98,7 +97,8 @@ with st.sidebar:
     st.markdown(f'<p class="data-label">Open Interest MoM</p><p class="data-value">{d["oi_mom"]:+.2f}%</p>', unsafe_allow_html=True)
 
 # --- 5. MAIN UI ---
-st.title("MASTER Crypto Risk Index")
+st.header("MASTER INDEX", text_alignment="center")
+
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.plotly_chart(create_mini_dial("MACRO (M)", risk_m, "40%"), use_container_width=True)
 c2.plotly_chart(create_mini_dial("ADOPTION (A)", risk_a, "10%"), use_container_width=True)
@@ -108,10 +108,10 @@ c5.plotly_chart(create_mini_dial("EXPOSURE (E)", risk_e, "10%"), use_container_w
 
 st.markdown("---")
 
-# Main Gauge with Integrated Action Text
+# Large Dial: CRYPTO CYCLE RISK (R)
 fig_main = go.Figure(go.Indicator(
     mode="gauge+number", value=risk_score,
-    title={'text': "TOTAL RISK (R)", 'font': {'size': 24, 'color': '#ffffff', 'weight': 'bold'}},
+    title={'text': "CRYPTO CYCLE RISK (R)", 'font': {'size': 26, 'color': '#ffffff', 'weight': 'bold'}},
     gauge={
         'axis': {'range': [0, 100], 'tickcolor': "#8b949e"},
         'bar': {'color': act_color},
@@ -121,14 +121,14 @@ fig_main = go.Figure(go.Indicator(
             {'range': [35, 71], 'color': 'rgba(251, 191, 36, 0.1)'},
             {'range': [71, 100], 'color': 'rgba(239, 68, 68, 0.1)'}]}))
 
-# Overlay the Action Text inside the gauge
-fig_main.add_annotation(x=0.5, y=0.15, text=act_label.upper(), showarrow=False, 
-                        font=dict(size=32, color=act_color, weight="bold"))
+# Elevated and Enlarged Action Text
+fig_main.add_annotation(x=0.5, y=0.45, text=act_label.upper(), showarrow=False, 
+                        font=dict(size=48, color=act_color, weight="bold"))
 
 fig_main.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "#ffffff"}, height=500, margin=dict(t=50, b=0))
 st.plotly_chart(fig_main, use_container_width=True)
 
-# Threshold Specification Box
+# Detailed Threshold Box
 st.markdown("---")
 st.subheader("Threshold Specifications")
 st.markdown(f"""
