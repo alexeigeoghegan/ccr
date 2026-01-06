@@ -64,4 +64,68 @@ risk_ado_stb = norm_risk(d['stable_growth'], S_STB, inv=True)
 risk_ado = int(round(risk_ado_etf * 0.5 + risk_ado_stb * 0.5))
 risk_str = int(round(norm_risk(d['fund'], S_FND)))
 
-total_score = int(round((risk_mac*0.4) + (risk_sen*0.2) + (risk_tec*0.
+total_score = int(round((risk_mac*0.4) + (risk_sen*0.2) + (risk_tec*0.2) + (risk_ado*0.1) + (risk_str*0.1)))
+
+if total_score < 35: act_label, act_color, g_color = "ACCUMULATE", "#006400", "#00ffcc"
+elif total_score < 70: act_label, act_color, g_color = "HOLD", "#8B8000", "#ffff00"
+else: act_label, act_color, g_color = "TAKE PROFITS / HEDGE", "#8B0000", "#ff4b4b"
+
+# --- 5. UI: TOP SECTION ---
+st.title("Crypto Cycle Risk")
+col_g, col_a = st.columns([2, 1])
+with col_g:
+    fig = go.Figure(go.Indicator(mode="gauge+number", value=total_score,
+        gauge={'axis': {'range': [0, 100]}, 'bar': {'color': g_color},
+               'steps': [{'range': [0, 35], 'color': '#002200'},
+                         {'range': [35, 70], 'color': '#222200'},
+                         {'range': [70, 100], 'color': '#220000'}]}))
+    fig.update_layout(paper_bgcolor='#0e1117', font={'color': "white"}, height=320, margin=dict(t=0, b=0))
+    st.plotly_chart(fig, use_container_width=True)
+with col_a:
+    st.write("##")
+    st.markdown(f'<div class="stAlert" style="background-color:{act_color};">{act_label}</div>', unsafe_allow_html=True)
+
+st.markdown("---")
+c1, c2, c3, c4, c5 = st.columns(5)
+def draw_pill(label, val):
+    clr = "#00ffcc" if val < 35 else "#ffff00" if val < 70 else "#ff4b4b"
+    st.markdown(f"**{label}** <br> <span style='color:{clr}; font-size:42px; font-weight:bold;'>{val}</span>", unsafe_allow_html=True)
+
+with c1: draw_pill("MACRO 40%", risk_mac)
+with c2: draw_pill("SENTIMENT 20%", risk_sen)
+with c3: draw_pill("TECHNICALS 20%", risk_tec)
+with c4: draw_pill("ADOPTION 10%", risk_ado)
+with c5: draw_pill("STRUCTURE 10%", risk_str)
+
+# --- 6. PURPOSE & METHODOLOGY ---
+st.markdown(f"""
+    <div class="instr-box">
+        <b>Purpose:</b> This dashboard aggregates data to help determine if you should be <b>Accumulating</b> (reducing cash), <b>Holding</b>, or <b>Hedging</b> (moving to stables). 
+        <br><b>Disclaimer:</b> Not financial advice. Data for educational purposes only.
+    </div>
+    """, unsafe_allow_html=True)
+
+st.subheader("Methodology")
+m_col1, m_col2, m_col3 = st.columns(3)
+with m_col1:
+    st.markdown(f"""<div class="logic-box"><b>1. Macro (40%):</b> 50% weight on Financial Momentum (Avg Risk of DXY, Yields, Oil) calculated as <i>(MoM % / Sensitivity) * 100</i>. 50% weight on Global M2 expansion vs {S_M2}% target.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>4. Adoption (10%):</b> 50% weight on BTC ETF Flows ({S_ETF}% Target) and 50% weight on Stablecoin Supply Growth ({S_STB}% Target). Higher inflows/growth result in a lower risk score.</div>""", unsafe_allow_html=True)
+
+with m_col2:
+    st.markdown(f"""<div class="logic-box"><b>2. Sentiment (20%):</b> 1:1 mapping of the Fear & Greed Index. Identifies when extreme retail exuberance or fear creates a divergence from macro fundamentals.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>5. Structure (10%):</b> Calculated as <i>(Current Funding / {S_FND}% Ceiling) * 100</i>. Higher funding rates indicate unsustainable leverage and immediate correction risk.</div>""", unsafe_allow_html=True)
+
+with m_col3:
+    st.markdown(f"""<div class="logic-box"><b>3. Technicals (20%):</b> 1:1 mapping of the CBBI Index. Aggregates multiple on-chain oscillators to track historical cycle peaks and troughs.</div>""", unsafe_allow_html=True)
+
+# --- 7. SIDEBAR DATA FEED ---
+st.sidebar.write(f"Bitcoin: `${d.get('btc',0):,.0f}`")
+st.sidebar.write(f"DXY Index: `{d.get('dxy',0):.2f}` (`{d.get('dxy_mom',0):+.2f}%` MoM)")
+st.sidebar.write(f"10Y Yield: `{d.get('yield',0):.2f}%` (`{d.get('yld_mom',0):+.2f}%`)")
+st.sidebar.write(f"Oil: `${d.get('oil',0):.1f}` (`{d.get('oil_mom',0):+.2f}%`)")
+st.sidebar.write(f"Global M2: `{d.get('m2_mom')}%`")
+st.sidebar.write(f"Fear & Greed: `{d.get('fgi')}`")
+st.sidebar.write(f"CBBI Index: `{d.get('cbbi')}`")
+st.sidebar.write(f"ETF Inflow: `{d.get('etf')}%`")
+st.sidebar.write(f"Stablecoin Growth: `{d.get('stable_growth')}%`")
+st.sidebar.write(f"Funding: `{d.get('fund')}%`")
