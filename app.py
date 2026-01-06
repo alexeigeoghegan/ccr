@@ -5,7 +5,7 @@ import pandas as pd
 import urllib3
 import plotly.graph_objects as go
 
-# Disable SSL warnings
+# Disable SSL warnings to ensure smooth API handshakes
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 1. PAGE CONFIGURATION ---
@@ -20,7 +20,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LOGIC: NORMALIZATION ---
+# --- 2. LOGIC: RISK NORMALIZATION ---
 def norm_risk(val, sensitivity, inv=False):
     """
     Normalizes a value into a 0-100 risk score.
@@ -34,15 +34,16 @@ def norm_risk(val, sensitivity, inv=False):
 
 @st.cache_data(ttl=3600)
 def get_data():
-    d = {'btc': 93230, 'dxy': 98.61, 'yield': 4.18, 'oil': 57.0, 'gold': 4507, 'fgi': 44, 'cbbi': 55, 
+    # 2026 Baseline Snapshot (Manual Fallbacks)
+    d = {'btc': 93246, 'dxy': 98.60, 'yield': 4.18, 'oil': 57.0, 'gold': 4506, 'fgi': 44, 'cbbi': 55, 
          'm2_mom': 0.35, 'cap': '3.2T', 'dom': '58.4%', 'etf': 1.2, 'fund': 0.01, 'ssr': 12.0}
     try:
-        # Fetch data for MoM calculations
+        # Fetch 2 months for Raw MoM comparison
         data = yf.download(["BTC-USD", "DX-Y.NYB", "^TNX", "CL=F", "GC=F"], period="2mo", progress=False)['Close'].ffill().dropna()
         
         def get_raw_mom(col):
             curr = data[col].iloc[-1]
-            prev = data[col].iloc[-22]
+            prev = data[col].iloc[-22] # 22 trading days = 1 month
             return ((curr - prev) / prev) * 100, curr
 
         dxy_m, dxy_c = get_raw_mom("DX-Y.NYB")
@@ -55,24 +56,27 @@ def get_data():
             'dxy_mom': dxy_m, 'yld_mom': yld_m, 'oil_mom': oil_m
         })
     except:
-        d.update({'dxy_mom': 0.46, 'yld_mom': 0.72, 'oil_mom': 3.09})
+        d.update({'dxy_mom': 0.46, 'yld_mom': 0.72, 'oil_mom': 3.06})
     return d
 
 d = get_data()
 
-# --- 3. SIDEBAR CONTROLS ---
+# --- 3. SIDEBAR: GOLDEN SETTINGS (ALARM THRESHOLDS) ---
 if st.sidebar.button("Reset to Defaults"):
     st.rerun()
 
 st.sidebar.markdown("### Sensitivity Settings")
-s_dxy = st.sidebar.slider("DXY MoM Sensitivity (%)", 0.5, 5.0, 2.0)
-s_yld = st.sidebar.slider("10Y Yield MoM Sensitivity (%)", 1.0, 10.0, 5.0)
-s_oil = st.sidebar.slider("Oil MoM Sensitivity (%)", 2.0, 20.0, 10.0)
-s_m2  = st.sidebar.slider("M2 MoM Liquidity Target (%)", 0.1, 2.0, 1.0)
-s_etf = st.sidebar.slider("ETF MoM Target (%)", 1.0, 10.0, 5.0)
-s_fnd = st.sidebar.slider("Funding Max Risk (%)", 0.01, 0.2, 0.1)
+st.sidebar.info("These sliders define the 'Max Risk' threshold for each metric.")
 
-# --- 4. PILLAR SCORING ---
+# Golden Settings for 2026
+s_dxy = st.sidebar.slider("DXY MoM Sensitivity (%)", 0.5, 5.0, 2.5) 
+s_yld = st.sidebar.slider("10Y Yield MoM Sensitivity (%)", 1.0, 10.0, 5.0)
+s_oil = st.sidebar.slider("Oil MoM Sensitivity (%)", 2.0, 20.0, 12.0)
+s_m2  = st.sidebar.slider("M2 MoM Liquidity Target (%)", 0.1, 2.0, 0.8)
+s_etf = st.sidebar.slider("ETF MoM Target (%)", 1.0, 10.0, 4.0)
+s_fnd = st.sidebar.slider("Funding Max Risk (%)", 0.01, 0.2, 0.08)
+
+# --- 4. PILLAR SCORING ENGINE ---
 # MACRO: 50% Financial Momentum / 50% Liquidity Growth
 risk_mac_fin = (norm_risk(d['dxy_mom'], s_dxy) + norm_risk(d['yld_mom'], s_yld) + norm_risk(d['oil_mom'], s_oil)) / 3
 risk_mac_liq = norm_risk(d['m2_mom'], s_m2, inv=True) 
@@ -81,9 +85,9 @@ risk_mac = int(round(risk_mac_fin * 0.5 + risk_mac_liq * 0.5))
 risk_sen = int(d['fgi']) 
 risk_tec = int(d['cbbi']) 
 risk_ado = int(round(norm_risk(d['etf'], s_etf, inv=True)))
-# STRUCTURE: Risk based on user-defined 0 to 0.1% scale
 risk_str = int(round(norm_risk(d['fund'], s_fnd)))
 
+# TOTAL SCORE (WEIGHTED)
 total_score = int(round((risk_mac*0.4) + (risk_sen*0.2) + (risk_tec*0.2) + (risk_ado*0.1) + (risk_str*0.1)))
 
 # Color & Action Logic
@@ -122,39 +126,42 @@ with c3: draw_pill("TECHNICALS 20%", risk_tec)
 with c4: draw_pill("ADOPTION 10%", risk_ado)
 with c5: draw_pill("STRUCTURE 10%", risk_str)
 
-# --- 7. METHODOLOGY ---
+# --- 7. METHODOLOGY (DETAILED CALCULATION) ---
 st.markdown("---")
 st.subheader("Methodology")
 l1, l2 = st.columns(2)
+
 with l1:
     st.markdown(f"""
     <div class="logic-box">
         <b>1. Macro (40% Weight):</b> Split 50% Financial Momentum / 50% Liquidity Growth.<br>
-        • Momentum: Averages the risk of DXY (+{d['dxy_mom']:.2f}%), Yields (+{d['yld_mom']:.2f}%), and Oil (+{d['oil_mom']:.2f}%).<br>
-        • Liquidity: Based on M2 MoM growth. {s_m2}% target = 0 Risk; 0% growth = 100 Risk. (Current: {d['m2_mom']}%)
+        • Momentum: Average risk of DXY (+{d['dxy_mom']:.2f}%), Yields (+{d['yld_mom']:.2f}%), and Oil (+{d['oil_mom']:.2f}%). Math: <i>(MoM % / Sensitivity Slider) * 100</i>.<br>
+        • Liquidity: M2 MoM growth. {s_m2}% target = 0 Risk; 0% growth = 100 Risk.
     </div>
     <div class="logic-box">
-        <b>2. Sentiment (20% Weight):</b> Direct 1:1 mapping to the Fear & Greed Index ({risk_sen}/100). Higher scores signal dangerous exuberance.
+        <b>2. Sentiment (20% Weight):</b> 1:1 mapping to the Fear & Greed Index. High values signal extreme retail exuberance.
     </div>
     """, unsafe_allow_html=True)
+
 with l2:
     st.markdown(f"""
     <div class="logic-box">
-        <b>3. Technicals (20% Weight):</b> Direct 1:1 mapping to the CBBI Index ({risk_tec}/100). Aggregates on-chain and technical cyclical oscillators.
+        <b>3. Technicals (20% Weight):</b> 1:1 mapping to the CBBI Index. Uses 11 on-chain oscillators to track historical cycle peaks.
     </div>
     <div class="logic-box">
         <b>4. Adoption & Structure (20% Weight):</b><br>
-        • Adoption (10%): ETF MoM Net Inflow. {s_etf}% target = 0 Risk; 0% inflow = 100 Risk. (Current: {d['etf']}%)<br>
-        • Structure (10%): Funding Rate velocity. 0% baseline = 0 Risk; {s_fnd}% = 100 Risk. (Current: {d['fund']}%)
+        • Adoption (10%): ETF MoM Net Inflow. Math: <i>(1 - (Actual Inflow / {s_etf}% Target)) * 100</i>.<br>
+        • Structure (10%): Funding Rate velocity. 0% baseline = 0 Risk; {s_fnd}% = 100 Risk.
     </div>
     """, unsafe_allow_html=True)
 
 # --- 8. SIDEBAR DATA FEED ---
 st.sidebar.markdown("---")
 st.sidebar.write(f"Bitcoin: `${d.get('btc',0):,.0f}`")
-st.sidebar.write(f"DXY: `{d.get('dxy',0):.2f}` (`{d.get('dxy_mom',0):+.2f}%`)")
+st.sidebar.write(f"DXY: `{d.get('dxy',0):.2f}` (`{d.get('dxy_mom',0):+.2f}%` MoM)")
 st.sidebar.write(f"10Y Yield: `{d.get('yield',0):.2f}%` (`{d.get('yld_mom',0):+.2f}%`)")
 st.sidebar.write(f"Oil: `${d.get('oil',0):.1f}` (`{d.get('oil_mom',0):+.2f}%`)")
+st.sidebar.write(f"Gold: `${d.get('gold',0):,.0f}`")
 st.sidebar.write(f"Global M2: `{d.get('m2_mom')}%`")
 st.sidebar.write(f"Total Cap: `{d.get('cap')}`")
 st.sidebar.write(f"BTC Dom: `{d.get('dom')}`")
