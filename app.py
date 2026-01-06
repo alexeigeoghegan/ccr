@@ -108,4 +108,36 @@ col5.metric("STRUCTURE 10%", f"{int(round(disp_struct))}")
 st.markdown("### 📈 7-Day Risk Trend")
 fig_line = go.Figure(go.Scatter(x=df_history["Date"], y=df_history["Score"], mode='lines+markers', line=dict(color='#00ffcc', width=3), fill='tozeroy', fillcolor='rgba(0, 255, 204, 0.1)'))
 fig_line.update_layout(paper_bgcolor='#0e1117', plot_bgcolor='#0e1117', font={'color': 'white'}, height=250, margin=dict(t=10, b=10), yaxis=dict(range=[0, 100]))
-st
+st.plotly_chart(fig_line, use_container_width=True)
+
+# PILLAR DESCRIPTIONS
+st.markdown("---")
+d_col1, d_col2 = st.columns(2)
+with d_col1:
+    st.info("**Macro:** Global liquidity (M2) and financial conditions (USD Index & Yields). Driving force of asset inflation.")
+    st.info("**Sentiment:** Market psychology via Fear & Greed. High scores signal extreme optimism/potential tops.")
+    st.info("**Technicals:** CBBI composite. Uses on-chain and technical metrics to track cycle maturity.")
+with d_col2:
+    st.info("**Adoption:** Net capital flow into Bitcoin Spot ETFs. Measures institutional 'sticky' demand.")
+    st.info("**Structure:** Leverage and liquidity levels. High funding and low stablecoin ratios signal overheating.")
+
+# SIDEBAR DATA FEED
+st.sidebar.header("📡 Data Feed")
+st.sidebar.markdown("### **MACRO**")
+st.sidebar.write(f"DXY Index: `{round(raw.get('dxy',0), 2)}`")
+st.sidebar.write(f"10Y Yield: `{round(raw.get('yield',0), 2)}%`")
+st.sidebar.write(f"Oil Price: `${round(raw.get('oil',0), 2)}`")
+st.sidebar.write(f"Global M2 Liquidity (YoY): `{raw.get('m2')}%`")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### **SENTIMENT**")
+st.sidebar.write(f"Fear & Greed Index: `{raw.get('fng_vals',[50])[0]}`")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### **TECHNICALS**")
+st.sidebar.write(f"CBBI Index: `{round(raw.get('cbbi',0), 1)}`")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### **ADOPTION**")
+st.sidebar.write(f"ETF BTC Net Inflow (MoM): `{raw.get('etf')}%`")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### **STRUCTURE**")
+st.sidebar.write(f"Funding Rates: `{raw.get('fund')}%`")
+st.sidebar.write(f"SSR Ratio: `{raw.get('ssr')}`")
