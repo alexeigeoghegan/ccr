@@ -17,7 +17,7 @@ st.markdown("""
     .main { background-color: #0e1117; }
     [data-testid="stMetricValue"] { font-size: 40px !important; font-weight: 700 !important; }
     .stAlert { border: none; padding: 20px; border-radius: 15px; font-size: 28px; font-weight: 800; text-align: center; }
-    .logic-box { background-color: #161b22; padding: 20px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 15px; font-size: 14px; color: #e0e0e0; }
+    .logic-box { background-color: #161b22; padding: 15px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 10px; font-size: 14px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -32,17 +32,15 @@ def norm_risk(val, mi, ma, inv=False):
     except: return 50.0
 
 def calculate_total_risk(dxy, yld, oil, fgi, cbbi, m2_mom, etf, fund, ssr):
-    # MACRO 40% (Fin Cond 20% + M2 20%)
-    # DXY/Yield/Oil UP = High Risk
+    # MACRO 40% (Fin Cond 20% + M2 MoM 20%)
     score_fin = (norm_risk(dxy, 98, 108) + norm_risk(yld, 3, 5) + norm_risk(oil, 65, 95)) / 3
-    # M2/ETF UP = Low Risk (inv=True)
     p_macro = (score_fin * 0.20) + (norm_risk(m2_mom, 0, 1.0, inv=True) * 0.20) 
     
     p_sent = (fgi * 0.20)
     p_tech = (cbbi * 0.20)
     p_adopt = (norm_risk(etf, -1, 5, inv=True) * 0.10)
     
-    # STRUCTURE 10% (Fund UP = High Risk, SSR UP = High Risk)
+    # STRUCTURE 10% (Low funding/low SSR = Low Risk)
     p_struct = (norm_risk(fund, 0, 0.06) * 0.05) + (norm_risk(ssr, 8, 22) * 0.05)
     
     return int(round(p_macro + p_sent + p_tech + p_adopt + p_struct))
@@ -50,35 +48,28 @@ def calculate_total_risk(dxy, yld, oil, fgi, cbbi, m2_mom, etf, fund, ssr):
 @st.cache_data(ttl=3600)
 def get_data():
     headers = {'User-Agent': 'Mozilla/5.0'}
+    d = {'btc': 98500, 'dxy': 102, 'yield': 4.2, 'oil': 75, 'gold': 4470, 'fgi': 44, 'cbbi': 55, 
+         'm2_mom': 0.35, 'cap': '3.2T', 'dom': '58.4%', 'etf': 1.2, 'fund': 0.01, 'ssr': 12.0}
     try:
         macro = yf.download(["BTC-USD", "DX-Y.NYB", "^TNX", "CL=F", "GC=F"], period="2mo", progress=False)['Close'].ffill().dropna()
-        # CBBI fetch
-        cbbi_res = requests.get("https://colintalkscrypto.com/cbbi/data/latest.json", headers=headers, verify=False).json()
-        conf = cbbi_res.get("Confidence", cbbi_res)
-        latest_ts = max(conf.keys(), key=int)
-        cbbi_val = 55.0 # Explicitly set as requested
-        
-        # 30-Day History Loop
-        history = []
+        d.update({'btc': macro["BTC-USD"].iloc[-1], 'dxy': macro["DX-Y.NYB"].iloc[-1], 
+                  'yield': macro["^TNX"].iloc[-1], 'oil': macro["CL=F"].iloc[-1], 
+                  'gold': macro["GC=F"].iloc[-1], 'macro_df': macro})
+    except: pass
+    
+    history = []
+    if 'macro_df' in d:
         for i in range(30):
             idx = -(i+1)
             history.append({
-                "Date": macro.index[idx].date(),
-                "Score": calculate_total_risk(macro["DX-Y.NYB"].iloc[idx], macro["^TNX"].iloc[idx], macro["CL=F"].iloc[idx],
-                                              44, 55, 0.35, 1.2, 0.01, 12.0)
+                "Date": d['macro_df'].index[idx].date(),
+                "Score": calculate_total_risk(d['macro_df']["DX-Y.NYB"].iloc[idx], d['macro_df']["^TNX"].iloc[idx], 
+                                              d['macro_df']["CL=F"].iloc[idx], 44, 55, 0.35, 1.2, 0.01, 12.0)
             })
-        
-        return pd.DataFrame(history).sort_values("Date"), {
-            'btc': macro["BTC-USD"].iloc[-1], 'dxy': macro["DX-Y.NYB"].iloc[-1], 
-            'yield': macro["^TNX"].iloc[-1], 'oil': macro["CL=F"].iloc[-1], 
-            'gold': macro["GC=F"].iloc[-1], 'fgi': 44, 'cbbi': 55, 'm2_mom': 0.35, 
-            'cap': '3.2T', 'dom': '58.4%', 'etf': 1.2, 'fund': 0.01, 'ssr': 12.0
-        }
-    except:
-        return pd.DataFrame(), {}
+    return pd.DataFrame(history).sort_values("Date"), d
 
 df_hist, d = get_data()
-current_score = df_hist["Score"].iloc[-1] if not df_hist.empty else 50
+current_score = int(round(df_hist["Score"].iloc[-1])) if not df_hist.empty else 50
 
 # --- 3. UI DASHBOARD ---
 st.title("Crypto Cycle Risk")
@@ -103,9 +94,9 @@ with col_a:
 st.markdown("---")
 c1, c2, c3, c4, c5 = st.columns(5)
 
-# Calculate Individual Component Risks for display
+# Calculate risks for display
 s_mac = int(round((norm_risk(d['dxy'],98,108)*0.33 + norm_risk(d['yield'],3,5)*0.33 + norm_risk(d['oil'],65,95)*0.34)*0.5 + norm_risk(d['m2_mom'],0,1.0,True)*0.5))
-s_sen, s_tec = d['fgi'], int(d['cbbi'])
+s_sen, s_tec = int(d['fgi']), int(d['cbbi'])
 s_ado = int(round(norm_risk(d['etf'],-1,5,True)))
 s_str = int(round(norm_risk(d['fund'],0,0.06)*0.5 + norm_risk(d['ssr'],8,22)*0.5))
 
@@ -120,22 +111,22 @@ with c4: draw_pill("ADOPTION 10%", s_ado)
 with c5: draw_pill("STRUCTURE 10%", s_str)
 
 # --- 5. 30-DAY TREND ---
-st.markdown("### 📈 30-Day Risk Trend")
+st.markdown("---")
+st.markdown("### Risk Trend (30D)")
 fig_line = go.Figure(go.Scatter(x=df_hist["Date"], y=df_hist["Score"], mode='lines', line=dict(color='#00ffcc', width=4), fill='tozeroy', fillcolor='rgba(0, 255, 204, 0.1)'))
 fig_line.update_layout(paper_bgcolor='#0e1117', plot_bgcolor='#0e1117', font={'color': 'white'}, height=280, margin=dict(t=10, b=10), yaxis=dict(range=[0, 100], gridcolor='#333'))
 st.plotly_chart(fig_line, use_container_width=True)
 
 # --- 6. LOGIC BREAKDOWN ---
 st.markdown("---")
-st.subheader("Pillar Derivation Logic")
 l1, l2 = st.columns(2)
 with l1:
-    st.markdown(f"""<div class="logic-box"><b>Macro (40%):</b> 50% Financial Conditions (DXY, Yields, Oil) + 50% M2 Liquidity. Risk increases when USD strengthens or liquidity contracts. <br><i>Calculated: ({s_mac} risk)</i></div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="logic-box"><b>Sentiment (20%):</b> Direct Fear & Greed Index score. Measures irrational exuberance. <br><i>Current: {s_sen} (Fearful/Neutral)</i></div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="logic-box"><b>Technicals (20%):</b> CBBI score. Aggregates 11 cycle indicators. <br><i>Current: {s_tec} (Mid-Cycle)</i></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>Macro (40%):</b> Financial conditions (USD/Yields/Oil) + M2 Liquidity (MoM). Risk score rises as USD strengthens or liquidity growth slows.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>Sentiment (20%):</b> Fear & Greed Index. High scores signal extreme optimism and market danger.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>Technicals (20%):</b> CBBI Index. Aggregates on-chain and technical oscillators to track cycle maturity.</div>""", unsafe_allow_html=True)
 with l2:
-    st.markdown(f"""<div class="logic-box"><b>Adoption (10%):</b> BTC Spot ETF Inflow momentum. High institutional buying (5% MoM cap) reduces risk scores. <br><i>Calculated: ({s_ado} risk)</i></div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="logic-box"><b>Structure (10%):</b> 50% Funding Rates + 50% SSR. Risk spikes when leverage (Funding) is high or stablecoin buying power (SSR) is exhausted. <br><i>Calculated: ({s_str} risk)</i></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>Adoption (10%):</b> BTC Spot ETF Inflows. High MoM inflow momentum reduces risk scores.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>Structure (10%):</b> Funding Rates + SSR. High leverage (Funding) or low stablecoin power (SSR) increases risk.</div>""", unsafe_allow_html=True)
 
 # --- 7. SIDEBAR ---
 st.sidebar.write(f"Bitcoin: `${d.get('btc',0):,.0f}`")
