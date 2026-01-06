@@ -125,4 +125,36 @@ with l1:
     <div class="logic-box">
         <b>2. Sentiment (20% Weight):</b> 1:1 mapping to the Fear & Greed Index. Absolute value represents psychological exhaustion.
     </div>
-    """, unsafe_allow_html
+    """, unsafe_allow_html=True)
+with l2:
+    st.markdown(f"""
+    <div class="logic-box">
+        <b>3. Technicals (20% Weight):</b> 1:1 mapping to the CBBI Index. Aggregates on-chain and technical cyclical oscillators.
+    </div>
+    <div class="logic-box">
+        <b>4. Adoption & Structure (20% Weight):</b><br>
+        • Adoption (10%): ETF MoM Net Inflow scaled from -{S_ETF}% (100 risk) to +{S_ETF}% (0 risk).<br>
+        • Structure (10%): Funding rate risk scaled from 0% (0 risk) to {S_FND}% (100 risk).
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- 7. SETTINGS & DATA FEED ---
+st.markdown("---")
+with st.expander("⚙️ Advanced Sensitivity Settings"):
+    st.write("Current calculation: (Actual Change / Sensitivity Range) scaled to 0-100.")
+    st.write(f"DXY Range: ±{S_DXY}% | Yield Range: ±{S_YLD}% | Oil Range: ±{S_OIL}%")
+    st.write(f"M2 Target: +{S_M2}% | ETF Target: +{S_ETF}% | Funding Max: {S_FND}%")
+
+st.sidebar.write(f"Bitcoin: `${d.get('btc',0):,.0f}`")
+st.sidebar.write(f"DXY Index: `{d.get('dxy',0):.2f}` (`{d.get('dxy_mom',0):+.2f}%` MoM)")
+st.sidebar.write(f"10Y Yield: `{d.get('yield',0):.2f}%` (`{d.get('yld_mom',0):+.2f}%` MoM)")
+st.sidebar.write(f"Oil: `${d.get('oil',0):.1f}` (`{d.get('oil_mom',0):+.2f}%` MoM)")
+st.sidebar.write(f"Gold: `${d.get('gold',0):,.0f}`")
+st.sidebar.write(f"Global M2: `{d.get('m2_mom')}%`")
+st.sidebar.write(f"Total Cap: `{d.get('cap')}`")
+st.sidebar.write(f"BTC Dom: `{d.get('dom')}`")
+st.sidebar.write(f"Fear & Greed: `{d.get('fgi')}`")
+st.sidebar.write(f"CBBI Index: `{d.get('cbbi')}`")
+st.sidebar.write(f"ETF Inflow: `{d.get('etf')}%`")
+st.sidebar.write(f"Funding: `{d.get('fund')}%`")
+st.sidebar.write(f"SSR Ratio: `{d.get('ssr')}`")
