@@ -15,8 +15,8 @@ st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #ffffff; }
     .stAlert { border: none; padding: 25px; border-radius: 12px; font-size: 28px; font-weight: 800; text-align: center; color: white !important; }
-    .logic-box { background-color: #1c2128; padding: 18px; border-radius: 10px; border: 1px solid #30363d; margin-bottom: 12px; font-size: 14px; line-height: 1.6; min-height: 160px; }
-    .instr-box { background-color: #0d1117; padding: 20px; border-radius: 8px; margin: 20px 0; font-size: 15px; border: 1px solid #30363d; border-top: 4px solid #00ffcc; text-align: center; }
+    .logic-box { background-color: #1c2128; padding: 20px; border-radius: 10px; border: 1px solid #30363d; margin-top: 10px; font-size: 14px; line-height: 1.7; }
+    .instr-box { background-color: #0d1117; padding: 20px; border-radius: 8px; margin-top: 20px; font-size: 15px; border: 1px solid #30363d; border-top: 4px solid #00ffcc; text-align: center; }
     .sidebar-header { font-size: 16px; font-weight: 700; color: #00ffcc; margin-top: 20px; border-bottom: 1px solid #30363d; padding-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
     .data-label { color: #8b949e; font-size: 14px; margin-bottom: 2px; }
     .data-value { color: #ffffff; font-family: 'Courier New', monospace; font-size: 16px; font-weight: bold; margin-bottom: 10px; }
@@ -25,6 +25,7 @@ st.markdown("""
 
 # --- 2. CORE FUNCTIONS ---
 def norm_bipolar(val, bound, inv=False):
+    """Maps range [-bound, +bound] to [0, 100] Risk."""
     try:
         val = float(val)
         score = ((val - (-bound)) / (bound - (-bound))) * 100
@@ -43,7 +44,7 @@ def create_mini_dial(label, value):
 
 @st.cache_data(ttl=3600)
 def get_live_data():
-    # 2026 Snapshot with Open Interest Proxy
+    # 2026 Strategy Snapshot
     d = {'btc': 94230, 'dxy': 98.60, 'yield': 4.18, 'oil': 57.2, 'fgi': 48, 'cbbi': 54, 
          'm2_mom': 0.65, 'etf_mom': 1.1, 'stable_mom': 2.4, 'fund': 0.011, 'oi_mom': 4.2}
     try:
@@ -63,20 +64,13 @@ def get_live_data():
 d = get_live_data()
 B_DXY, B_YLD, B_OIL, B_M2, B_ETF, B_STB, S_FND, B_OI = 2.5, 5.0, 10.0, 2.5, 5.0, 5.0, 0.08, 10.0
 
-# [M]acro
 risk_m = int(round(((norm_bipolar(d.get('dxy_mom',0), B_DXY, False) + norm_bipolar(d.get('yld_mom',0), B_YLD, False) + norm_bipolar(d.get('oil_mom',0), B_OIL, False)) / 3) * 0.5 + norm_bipolar(d['m2_mom'], B_M2, True) * 0.5))
-# [A]doption
 risk_a = int(round(norm_bipolar(d['etf_mom'], B_ETF, True) * 0.5 + norm_bipolar(d['stable_mom'], B_STB, True) * 0.5))
-# [S]entiment
-risk_s = int(d['fgi'])
-# [T]echnicals
-risk_t = int(d['cbbi'])
-# [E]xposure (50% Funding / 50% OI Change)
+risk_s, risk_t = int(d['fgi']), int(d['cbbi'])
 risk_e_fnd = (max(min(d['fund'], S_FND), 0) / S_FND) * 100
 risk_e_oi = norm_bipolar(d['oi_mom'], B_OI, False)
 risk_e = int(round(risk_e_fnd * 0.5 + risk_e_oi * 0.5))
 
-# [R]isk Total Score
 risk_score = int(round((risk_m*0.4) + (risk_s*0.2) + (risk_t*0.2) + (risk_a*0.1) + (risk_e*0.1)))
 
 if risk_score < 35: act_label, act_color, g_color = "ACCUMULATE", "#008060", "#00ffcc"
@@ -86,17 +80,19 @@ else: act_label, act_color, g_color = "TAKE PROFITS / HEDGE", "#b91c1c", "#ef444
 # --- 4. SIDEBAR (MASTER FEEDS) ---
 with st.sidebar:
     st.title("MASTER Feeds")
+    st.markdown(f"**Updated:** {datetime.now().strftime('%d %b %Y')}")
     st.markdown('<div class="sidebar-header">Macro Drivers</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">DXY Index</p><p class="data-value">{d["dxy"]:.2f} ({d.get("dxy_mom",0):+.2f}%)</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">10Y Yield</p><p class="data-value">{d["yield"]:.2f}% ({d.get("yld_mom",0):+.2f}%)</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Global M2 MoM</p><p class="data-value">{d["m2_mom"]}%</p>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-header">Exposure Details</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-header">Adoption & Exposure</div>', unsafe_allow_html=True)
+    st.markdown(f'<p class="data-label">ETF Inflow MoM</p><p class="data-value">{d["etf_mom"]}%</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="data-label">Stablecoin Growth</p><p class="data-value">{d["stable_mom"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Funding Rate</p><p class="data-value">{d["fund"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Open Interest MoM</p><p class="data-value">{d["oi_mom"]:+.2f}%</p>', unsafe_allow_html=True)
 
     st.markdown('<div class="sidebar-header">Other Drivers</div>', unsafe_allow_html=True)
-    st.markdown(f'<p class="data-label">ETF Inflow MoM</p><p class="data-value">{d["etf_mom"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Fear & Greed</p><p class="data-value">{d["fgi"]}</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">CBBI Index</p><p class="data-value">{d["cbbi"]}</p>', unsafe_allow_html=True)
 
@@ -125,17 +121,22 @@ with col_action:
     st.write("##")
     st.markdown(f'<div class="stAlert" style="background-color:{act_color};">{act_label}</div>', unsafe_allow_html=True)
 
-# Bottom Row: Thresholds
+# Consolidated Methodology Box
 st.markdown("---")
-st.subheader("Thresholds")
-m1, m2, m3 = st.columns(3)
-with m1:
-    st.markdown(f"""<div class="logic-box"><b>(M) MACRO:</b> 50% Financial Momentum / 50% Liquidity.<br>
-    Risk is 0 at lower bound and 100 at upper bound for DXY (±{B_DXY}%), Yields (±5%), and Oil (±10%). M2 growth of +{B_M2}% equals 0 risk.</div>""", unsafe_allow_html=True)
-with m2:
-    st.markdown(f"""<div class="logic-box"><b>(E) EXPOSURE:</b> Monitors <b>Structural Leverage</b>.<br>
-    50% weight on Funding Rates (0% to {S_FND}%). 50% weight on Open Interest MoM (±{B_OI}%). High OI growth combined with high funding signals extreme liquidation risk.</div>""", unsafe_allow_html=True)
-with m3:
-    st.markdown(f"""<div class="logic-box"><b>(A, S, T):</b> Adoption (ETF/Stables), Sentiment (F&G), and Technicals (CBBI) use standard 0-100 scales to track demand, psychology, and cycle maturity.</div>""", unsafe_allow_html=True)
+st.subheader("Threshold Specifications")
+st.markdown(f"""
+<div class="logic-box">
+    <b>(M) Macro:</b> Split 50/50 between Financial Momentum and Global Liquidity. Risk scales bipolarly where 0 risk is ±{B_DXY}% for DXY, ±{B_YLD}% for Yields, and ±{B_OIL}% for Oil. M2 Liquidity is inverted: a +{B_M2}% expansion results in 0 risk, while a -{B_M2}% contraction results in 100 risk.<br><br>
+    <b>(A) Adoption:</b> Blends institutional demand (BTC ETF Flows) and crypto-native liquidity (Stablecoin Supply Expansion). Both use a ±5% bipolar scale where growth equals 0 risk and contraction equals 100 risk.<br><br>
+    <b>(S) Sentiment:</b> Maps the Fear & Greed Index 1:1. High scores (>75) indicate dangerous retail exuberance; low scores (<25) indicate cyclical fear.<br><br>
+    <b>(T) Technicals:</b> Maps the CBBI Index 1:1. This aggregates 11 on-chain and technical oscillators to track the 4-year cycle maturity.<br><br>
+    <b>(E) Exposure:</b> Monitors systemic leverage. Calculated 50% on Funding Rates (0% to {S_FND}% ceiling) and 50% on Open Interest MoM change (±{B_OI}% bipolar scale).
+</div>
+""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="instr-box"><b>Purpose:</b> Aggregates data for optimal capital allocation. <br><i><b>Disclaimer:</b> Not financial advice.</i></div>""", unsafe_allow_html=True)
+st.markdown(f"""
+    <div class="instr-box">
+        <b>Purpose:</b> This dashboard aggregates various data to help determine risk optimal capital allocation.
+        <br><i><b>Disclaimer:</b> Not financial advice. Data for educational purposes only.</i>
+    </div>
+    """, unsafe_allow_html=True)
