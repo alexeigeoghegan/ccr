@@ -1,151 +1,150 @@
 import streamlit as st
 import yfinance as yf
-import requests
 import pandas as pd
 import urllib3
 import plotly.graph_objects as go
+from datetime import datetime
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 1. PAGE CONFIGURATION ---
-st.set_page_config(page_title="Crypto Cycle Risk", layout="wide")
+st.set_page_config(page_title="Crypto Cycle Risk Dashboard", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; }
-    [data-testid="stMetricValue"] { font-size: 40px !important; font-weight: 700 !important; }
-    .stAlert { border: none; padding: 25px; border-radius: 15px; font-size: 32px; font-weight: 900; text-align: center; color: white !important; }
-    .logic-box { background-color: #161b22; padding: 15px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 10px; font-size: 14px; line-height: 1.6; min-height: 120px; }
-    .instr-box { background-color: #1c2128; padding: 20px; border: 1px solid #30363d; border-radius: 15px; margin: 20px 0; font-size: 15px; }
+    .main { background-color: #0e1117; color: #ffffff; }
+    [data-testid="stMetricValue"] { font-size: 32px !important; font-weight: 700 !important; color: #00ffcc; }
+    .stAlert { border: none; padding: 25px; border-radius: 15px; font-size: 28px; font-weight: 800; text-align: center; color: white !important; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+    .logic-box { background-color: #1c2128; padding: 20px; border-radius: 12px; border: 1px solid #30363d; margin-bottom: 15px; font-size: 14px; line-height: 1.6; }
+    .instr-box { background-color: #0d1117; padding: 20px; border-left: 5px solid #00ffcc; border-radius: 8px; margin: 20px 0; font-size: 15px; border-top: 1px solid #30363d; border-right: 1px solid #30363d; border-bottom: 1px solid #30363d; }
+    .sidebar-header { font-size: 18px; font-weight: 700; color: #8b949e; margin-top: 20px; border-bottom: 1px solid #30363d; padding-bottom: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LOGIC: NORMALIZATION ---
-def norm_risk(val, sensitivity, inv=False):
-    """Standard linear normalization (0 to sensitivity)."""
-    try:
-        score = (float(val) / float(sensitivity)) * 100
-        score = max(min(score, 100), 0)
-        return (100 - score) if inv else score
-    except: return 50.0
-
-def norm_bipolar(val, bound, inv=False):
-    """
-    Maps range [-bound, +bound] to [0, 100] Risk.
-    inv=False: -bound is 0 risk, +bound is 100 risk (Standard Macro).
-    inv=True: -bound is 100 risk, +bound is 0 risk (Liquidity/Adoption).
-    """
-    try:
-        val = float(val)
-        score = ((val - (-bound)) / (bound - (-bound))) * 100
-        score = max(min(score, 100), 0)
-        return (100 - score) if inv else score
-    except: return 50.0
-
+# --- 2. DATA ACQUISITION & CALCULATION ---
 @st.cache_data(ttl=3600)
-def get_data():
-    # 2026 Baseline Snapshot
-    d = {'btc': 94000, 'dxy': 98.60, 'yield': 4.18, 'oil': 57.0, 'gold': 4506, 'fgi': 44, 'cbbi': 55, 
-         'm2_mom': 0.35, 'cap': '3.2T', 'dom': '58.4%', 'etf': 1.2, 'stable_growth': 2.1, 'fund': 0.01}
+def get_live_data():
+    # 2026 Real-time Fallbacks
+    d = {'btc': 93693, 'dxy': 98.60, 'yield': 4.18, 'oil': 57.0, 'fgi': 52, 'cbbi': 58, 
+         'm2_mom': 0.62, 'etf_mom': 1.25, 'stable_mom': 2.3, 'fund': 0.012}
     try:
-        data = yf.download(["BTC-USD", "DX-Y.NYB", "^TNX", "CL=F", "GC=F"], period="2mo", progress=False)['Close'].ffill().dropna()
-        def get_raw_mom(col):
+        data = yf.download(["BTC-USD", "DX-Y.NYB", "^TNX", "CL=F"], period="2mo", progress=False)['Close'].ffill().dropna()
+        def get_mom(col):
             curr, prev = data[col].iloc[-1], data[col].iloc[-22]
             return ((curr - prev) / prev) * 100, curr
-        dxy_m, dxy_c = get_raw_mom("DX-Y.NYB")
-        yld_m, yld_c = get_raw_mom("^TNX")
-        oil_m, oil_c = get_raw_mom("CL=F")
+        dxy_m, dxy_c = get_mom("DX-Y.NYB")
+        yld_m, yld_c = get_mom("^TNX")
+        oil_m, oil_c = get_mom("CL=F")
         d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': dxy_c, 'yield': yld_c, 'oil': oil_c,
                   'dxy_mom': dxy_m, 'yld_mom': yld_m, 'oil_mom': oil_m})
     except:
         d.update({'dxy_mom': 0.46, 'yld_mom': 0.72, 'oil_mom': 3.06})
     return d
 
-d = get_data()
+d = get_data_vals = get_live_data()
 
-# --- 3. FIXED BIPOLAR BOUNDS ---
+# --- 3. RISK ENGINE LOGIC ---
+def norm_bipolar(val, bound, inv=False):
+    score = ((float(val) - (-bound)) / (bound - (-bound))) * 100
+    score = max(min(score, 100), 0)
+    return (100 - score) if inv else score
+
+# Sensitivity Bounds
 B_DXY, B_YLD, B_OIL, B_M2, B_ETF, B_STB, S_FND = 2.5, 5.0, 10.0, 2.5, 5.0, 5.0, 0.08
 
-# --- 4. PILLAR SCORING ENGINE ---
-# MACRO: 50% Financial Momentum / 50% Liquidity
-risk_mac_fin = (norm_bipolar(d['dxy_mom'], B_DXY, inv=False) + 
-                norm_bipolar(d['yld_mom'], B_YLD, inv=False) + 
-                norm_bipolar(d['oil_mom'], B_OIL, inv=False)) / 3
-risk_mac_liq = norm_bipolar(d['m2_mom'], B_M2, inv=True) # Inverse: -2.5% is 100 risk
-risk_mac = int(round(risk_mac_fin * 0.5 + risk_mac_liq * 0.5))
-
+# Pillar Math
+risk_mac_fin = (norm_bipolar(d['dxy_mom'], B_DXY, False) + norm_bipolar(d['yld_mom'], B_YLD, False) + norm_bipolar(d['oil_mom'], B_OIL, False)) / 3
+risk_mac = int(round(risk_mac_fin * 0.5 + norm_bipolar(d['m2_mom'], B_M2, True) * 0.5))
 risk_sen, risk_tec = int(d['fgi']), int(d['cbbi']) 
-
-# ADOPTION: Inverse Bipolar (Growth = 0 Risk)
-risk_ado = int(round(norm_bipolar(d['etf'], B_ETF, inv=True) * 0.5 + 
-                     norm_bipolar(d['stable_growth'], B_STB, inv=True) * 0.5))
-
-# STRUCTURE: 0 to 0.08% linear
+risk_ado = int(round(norm_bipolar(d['etf_mom'], B_ETF, True) * 0.5 + norm_bipolar(d['stable_mom'], B_STB, True) * 0.5))
 risk_str = int(round((max(min(d['fund'], S_FND), 0) / S_FND) * 100))
 
+# Total Score
 total_score = int(round((risk_mac*0.4) + (risk_sen*0.2) + (risk_tec*0.2) + (risk_ado*0.1) + (risk_str*0.1)))
 
-if total_score < 35: act_label, act_color, g_color = "ACCUMULATE", "#006400", "#00ffcc"
-elif total_score < 70: act_label, act_color, g_color = "HOLD", "#8B8000", "#ffff00"
-else: act_label, act_color, g_color = "TAKE PROFITS / HEDGE", "#8B0000", "#ff4b4b"
+# Dynamic UI Colors
+if total_score < 35: act_label, act_color, g_color = "ACCUMULATE", "#008060", "#00ffcc"
+elif total_score < 70: act_label, act_color, g_color = "HOLD", "#d97706", "#fbbf24"
+else: act_label, act_color, g_color = "TAKE PROFITS / HEDGE", "#b91c1c", "#ef4444"
 
-# --- 5. UI: TOP SECTION ---
-st.title("Crypto Cycle Risk")
-col_g, col_a = st.columns([2, 1])
-with col_g:
-    fig = go.Figure(go.Indicator(mode="gauge+number", value=total_score,
-        gauge={'axis': {'range': [0, 100]}, 'bar': {'color': g_color},
-               'steps': [{'range': [0, 35], 'color': '#002200'},
-                         {'range': [35, 70], 'color': '#222200'},
-                         {'range': [70, 100], 'color': '#220000'}]}))
-    fig.update_layout(paper_bgcolor='#0e1117', font={'color': "white"}, height=320, margin=dict(t=0, b=0))
+# --- 4. SIDEBAR (THE COMPLETE DATA FEED) ---
+with st.sidebar:
+    st.title("Data Feeds")
+    st.markdown(f"**Last Sync:** {datetime.now().strftime('%d %b %Y | %H:%M')}")
+    
+    st.markdown('<div class="sidebar-header">Macro Environment</div>', unsafe_allow_html=True)
+    st.write(f"DXY Index: `{d['dxy']:.2f}` ({d['dxy_mom']:+.2f}%)")
+    st.write(f"10Y Yield: `{d['yield']:.2f}%` ({d['yld_mom']:+.2f}%)")
+    st.write(f"Crude Oil: `${d['oil']:.2f}` ({d['oil_mom']:+.2f}%)")
+    st.sidebar.write(f"Global M2 MoM: `{d['m2_mom']}%`")
+
+    st.markdown('<div class="sidebar-header">On-Chain & Sentiment</div>', unsafe_allow_html=True)
+    st.write(f"Bitcoin: `${d['btc']:,.0f}`")
+    st.write(f"Fear & Greed Index: `{d['fgi']}`")
+    st.sidebar.write(f"CBBI Index: `{d['cbbi']}`")
+    st.sidebar.write(f"ETF Inflow MoM: `{d['etf_mom']}%`")
+    st.sidebar.write(f"Stablecoin Growth: `{d['stable_mom']}%`")
+    st.sidebar.write(f"Funding Rate: `{d['fund']}%`")
+
+# --- 5. MAIN UI LAYOUT ---
+st.title("Crypto Cycle Risk Index")
+
+col_gauge, col_action = st.columns([2, 1])
+with col_gauge:
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number", value=total_score,
+        domain={'x': [0, 1], 'y': [0, 1]},
+        gauge={
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#8b949e"},
+            'bar': {'color': g_color},
+            'bgcolor': "rgba(0,0,0,0)",
+            'borderwidth': 2,
+            'bordercolor': "#30363d",
+            'steps': [
+                {'range': [0, 35], 'color': 'rgba(0, 255, 204, 0.1)'},
+                {'range': [35, 70], 'color': 'rgba(251, 191, 36, 0.1)'},
+                {'range': [70, 100], 'color': 'rgba(239, 68, 68, 0.1)'}],
+            'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': total_score}}))
+    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "#ffffff", 'family': "Arial"}, height=380, margin=dict(t=30, b=0))
     st.plotly_chart(fig, use_container_width=True)
-with col_a:
+
+with col_action:
     st.write("##")
     st.markdown(f'<div class="stAlert" style="background-color:{act_color};">{act_label}</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style="padding-top: 20px;">
+        <p style="color: #8b949e; font-size: 14px;">Total Risk: <b>{total_score}/100</b></p>
+        <p style="color: #8b949e; font-size: 14px;">Market Phase: <b>{'Bearish' if total_score > 70 else 'Neutral' if total_score > 35 else 'Bullish'} Momentum</b></p>
+        </div>
+    """, unsafe_allow_html=True)
 
+# Pillar Pillars
 st.markdown("---")
-c1, c2, c3, c4, c5 = st.columns(5)
-def draw_pill(label, val):
-    clr = "#00ffcc" if val < 35 else "#ffff00" if val < 70 else "#ff4b4b"
-    st.markdown(f"**{label}** <br> <span style='color:{clr}; font-size:42px; font-weight:bold;'>{val}</span>", unsafe_allow_html=True)
+p1, p2, p3, p4, p5 = st.columns(5)
+with p1: draw_pill("MACRO (40%)", risk_mac)
+with p2: draw_pill("SENTIMENT (20%)", risk_sen)
+with p3: draw_pill("TECHNICALS (20%)", risk_tec)
+with p4: draw_pill("ADOPTION (10%)", risk_ado)
+with p5: draw_pill("STRUCTURE (10%)", risk_str)
 
-with c1: draw_pill("MACRO 40%", risk_mac)
-with c2: draw_pill("SENTIMENT 20%", risk_sen)
-with c3: draw_pill("TECHNICALS 20%", risk_tec)
-with c4: draw_pill("ADOPTION 10%", risk_ado)
-with c5: draw_pill("STRUCTURE 10%", risk_str)
-
+# Purpose Box
 st.markdown(f"""
     <div class="instr-box">
-        <b>Purpose:</b> This dashboard aggregates data to help determine if you should be <b>Accumulating</b> (reducing cash), <b>Holding</b>, or <b>Hedging</b> (moving to stables). 
+        <b>Purpose:</b> This dashboard aggregates cross-asset macro data and on-chain sentiment to determine optimal capital allocation. 
+        It identifies if you should be <b>Accumulating</b> (spending cash), <b>Holding</b>, or <b>Hedging</b> (selling into stables). 
         <br><b>Disclaimer:</b> Not financial advice. Data for educational purposes only.
     </div>
     """, unsafe_allow_html=True)
 
-# --- 6. METHODOLOGY ---
+# Methodology Sections
 st.subheader("Methodology")
-m_col1, m_col2, m_col3 = st.columns(3)
-with m_col1:
-    st.markdown(f"""<div class="logic-box"><b>1. Macro (40%):</b> Bipolar Risk Scale. Risk is 0 at lower bound and 100 at upper bound for DXY (±{B_DXY}%), Yields (±{B_YLD}%), and Oil (±{B_OIL}%). M2 Liquidity is inverted: +{B_M2}% = 0 Risk, -{B_M2}% = 100 Risk.</div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="logic-box"><b>4. Adoption (10%):</b> Inverse Bipolar Scale. Hitting the +{B_ETF}% ETF and +{B_STB}% Stablecoin growth targets results in 0 Risk. Hitting the negative bounds results in 100 Risk.</div>""", unsafe_allow_html=True)
-
-with m_col2:
-    st.markdown(f"""<div class="logic-box"><b>2. Sentiment (20%):</b> 1:1 mapping of the Fear & Greed Index. Identifies cycle-peak exuberance.</div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="logic-box"><b>5. Structure (10%):</b> Linear risk scale for Funding Rates from 0% (healthy) to {S_FND}% (extreme leverage).</div>""", unsafe_allow_html=True)
-
-with m_col3:
-    st.markdown(f"""<div class="logic-box"><b>3. Technicals (20%):</b> 1:1 mapping of the CBBI Index. Tracks long-term cycle maturity via a dozen on-chain oscillators.</div>""", unsafe_allow_html=True)
-
-# --- 7. SIDEBAR DATA FEED ---
-st.sidebar.write(f"Bitcoin: `${d.get('btc',0):,.0f}`")
-st.sidebar.write(f"DXY Index: `{d.get('dxy',0):.2f}` (`{d.get('dxy_mom',0):+.2f}%` MoM)")
-st.sidebar.write(f"10Y Yield: `{d.get('yield',0):.2f}%` (`{d.get('yld_mom',0):+.2f}%`)")
-st.sidebar.write(f"Oil: `${d.get('oil',0):.1f}` (`{d.get('oil_mom',0):+.2f}%`)")
-st.sidebar.write(f"Global M2: `{d.get('m2_mom')}%`")
-st.sidebar.write(f"Fear & Greed: `{d.get('fgi')}`")
-st.sidebar.write(f"CBBI Index: `{d.get('cbbi')}`")
-st.sidebar.write(f"ETF Inflow: `{d.get('etf')}%`")
-st.sidebar.write(f"Stablecoin Growth: `{d.get('stable_growth')}%`")
-st.sidebar.write(f"Funding: `{d.get('fund')}%`")
+m1, m2, m3 = st.columns(3)
+with m1:
+    st.markdown(f"""<div class="logic-box"><b>1. Macro (40%):</b> Bipolar Risk Scale. Risk is 0 at lower bound and 100 at upper bound for DXY (±{B_DXY}%), Yields (±{B_YLD}%), and Oil (±{B_OIL}%). M2 Liquidity is inverted: +{B_M2}% growth = 0 Risk.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>4. Adoption (10%):</b> Blends BTC ETF Inflows (±{B_ETF}%) and Stablecoin Supply Expansion (±{B_STB}%). Growth in these pools indicates new demand and lower risk.</div>""", unsafe_allow_html=True)
+with m2:
+    st.markdown(f"""<div class="logic-box"><b>2. Sentiment (20%):</b> Direct 1:1 mapping of the Fear & Greed Index. High scores signal dangerous retail exuberance.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>5. Structure (10%):</b> Linear risk scale for Funding Rates from 0% to {S_FND}% (Extreme Leverage).</div>""", unsafe_allow_html=True)
+with m3:
+    st.markdown(f"""<div class="logic-box"><b>3. Technicals (20%):</b> Direct 1:1 mapping of the CBBI Index. Aggregates technical oscillators to find cyclical exhaustion points.</div>""", unsafe_allow_html=True)
