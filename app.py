@@ -21,10 +21,24 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LOGIC: RISK NORMALIZATION ---
+# --- 2. LOGIC: NORMALIZATION ---
 def norm_risk(val, sensitivity, inv=False):
+    """Standard linear normalization (0 to sensitivity)."""
     try:
         score = (float(val) / float(sensitivity)) * 100
+        score = max(min(score, 100), 0)
+        return (100 - score) if inv else score
+    except: return 50.0
+
+def norm_bipolar(val, bound, inv=False):
+    """
+    Maps range [-bound, +bound] to [0, 100] Risk.
+    inv=False: -bound is 0 risk, +bound is 100 risk (Standard Macro).
+    inv=True: -bound is 100 risk, +bound is 0 risk (Liquidity/Adoption).
+    """
+    try:
+        val = float(val)
+        score = ((val - (-bound)) / (bound - (-bound))) * 100
         score = max(min(score, 100), 0)
         return (100 - score) if inv else score
     except: return 50.0
@@ -32,8 +46,8 @@ def norm_risk(val, sensitivity, inv=False):
 @st.cache_data(ttl=3600)
 def get_data():
     # 2026 Baseline Snapshot
-    d = {'btc': 93246, 'dxy': 98.60, 'yield': 4.18, 'oil': 57.0, 'gold': 4506, 'fgi': 44, 'cbbi': 55, 
-         'm2_mom': 0.35, 'cap': '3.2T', 'dom': '58.4%', 'etf': 1.2, 'stable_growth': 2.1, 'fund': 0.01, 'ssr': 12.0}
+    d = {'btc': 94000, 'dxy': 98.60, 'yield': 4.18, 'oil': 57.0, 'gold': 4506, 'fgi': 44, 'cbbi': 55, 
+         'm2_mom': 0.35, 'cap': '3.2T', 'dom': '58.4%', 'etf': 1.2, 'stable_growth': 2.1, 'fund': 0.01}
     try:
         data = yf.download(["BTC-USD", "DX-Y.NYB", "^TNX", "CL=F", "GC=F"], period="2mo", progress=False)['Close'].ffill().dropna()
         def get_raw_mom(col):
@@ -42,7 +56,7 @@ def get_data():
         dxy_m, dxy_c = get_raw_mom("DX-Y.NYB")
         yld_m, yld_c = get_raw_mom("^TNX")
         oil_m, oil_c = get_raw_mom("CL=F")
-        d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': dxy_c, 'yield': yld_c, 'oil': oil_c, 'gold': data["GC=F"].iloc[-1],
+        d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': dxy_c, 'yield': yld_c, 'oil': oil_c,
                   'dxy_mom': dxy_m, 'yld_mom': yld_m, 'oil_mom': oil_m})
     except:
         d.update({'dxy_mom': 0.46, 'yld_mom': 0.72, 'oil_mom': 3.06})
@@ -50,19 +64,25 @@ def get_data():
 
 d = get_data()
 
-# --- 3. FIXED GOLDEN SETTINGS ---
-S_DXY, S_YLD, S_OIL, S_M2, S_ETF, S_STB, S_FND = 2.5, 5.0, 12.0, 0.8, 4.0, 5.0, 0.08
+# --- 3. FIXED BIPOLAR BOUNDS ---
+B_DXY, B_YLD, B_OIL, B_M2, B_ETF, B_STB, S_FND = 2.5, 5.0, 10.0, 2.5, 5.0, 5.0, 0.08
 
-# --- 4. PILLAR SCORING ---
-risk_mac_fin = (norm_risk(d['dxy_mom'], S_DXY) + norm_risk(d['yld_mom'], S_YLD) + norm_risk(d['oil_mom'], S_OIL)) / 3
-risk_mac_liq = norm_risk(d['m2_mom'], S_M2, inv=True) 
+# --- 4. PILLAR SCORING ENGINE ---
+# MACRO: 50% Financial Momentum / 50% Liquidity
+risk_mac_fin = (norm_bipolar(d['dxy_mom'], B_DXY, inv=False) + 
+                norm_bipolar(d['yld_mom'], B_YLD, inv=False) + 
+                norm_bipolar(d['oil_mom'], B_OIL, inv=False)) / 3
+risk_mac_liq = norm_bipolar(d['m2_mom'], B_M2, inv=True) # Inverse: -2.5% is 100 risk
 risk_mac = int(round(risk_mac_fin * 0.5 + risk_mac_liq * 0.5))
 
 risk_sen, risk_tec = int(d['fgi']), int(d['cbbi']) 
-risk_ado_etf = norm_risk(d['etf'], S_ETF, inv=True)
-risk_ado_stb = norm_risk(d['stable_growth'], S_STB, inv=True)
-risk_ado = int(round(risk_ado_etf * 0.5 + risk_ado_stb * 0.5))
-risk_str = int(round(norm_risk(d['fund'], S_FND)))
+
+# ADOPTION: Inverse Bipolar (Growth = 0 Risk)
+risk_ado = int(round(norm_bipolar(d['etf'], B_ETF, inv=True) * 0.5 + 
+                     norm_bipolar(d['stable_growth'], B_STB, inv=True) * 0.5))
+
+# STRUCTURE: 0 to 0.08% linear
+risk_str = int(round((max(min(d['fund'], S_FND), 0) / S_FND) * 100))
 
 total_score = int(round((risk_mac*0.4) + (risk_sen*0.2) + (risk_tec*0.2) + (risk_ado*0.1) + (risk_str*0.1)))
 
@@ -97,7 +117,6 @@ with c3: draw_pill("TECHNICALS 20%", risk_tec)
 with c4: draw_pill("ADOPTION 10%", risk_ado)
 with c5: draw_pill("STRUCTURE 10%", risk_str)
 
-# --- 6. PURPOSE & METHODOLOGY ---
 st.markdown(f"""
     <div class="instr-box">
         <b>Purpose:</b> This dashboard aggregates data to help determine if you should be <b>Accumulating</b> (reducing cash), <b>Holding</b>, or <b>Hedging</b> (moving to stables). 
@@ -105,18 +124,19 @@ st.markdown(f"""
     </div>
     """, unsafe_allow_html=True)
 
+# --- 6. METHODOLOGY ---
 st.subheader("Methodology")
 m_col1, m_col2, m_col3 = st.columns(3)
 with m_col1:
-    st.markdown(f"""<div class="logic-box"><b>1. Macro (40%):</b> 50% weight on Financial Momentum (Avg Risk of DXY, Yields, Oil) calculated as <i>(MoM % / Sensitivity) * 100</i>. 50% weight on Global M2 expansion vs {S_M2}% target.</div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="logic-box"><b>4. Adoption (10%):</b> 50% weight on BTC ETF Flows ({S_ETF}% Target) and 50% weight on Stablecoin Supply Growth ({S_STB}% Target). Higher inflows/growth result in a lower risk score.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>1. Macro (40%):</b> Bipolar Risk Scale. Risk is 0 at lower bound and 100 at upper bound for DXY (±{B_DXY}%), Yields (±{B_YLD}%), and Oil (±{B_OIL}%). M2 Liquidity is inverted: +{B_M2}% = 0 Risk, -{B_M2}% = 100 Risk.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>4. Adoption (10%):</b> Inverse Bipolar Scale. Hitting the +{B_ETF}% ETF and +{B_STB}% Stablecoin growth targets results in 0 Risk. Hitting the negative bounds results in 100 Risk.</div>""", unsafe_allow_html=True)
 
 with m_col2:
-    st.markdown(f"""<div class="logic-box"><b>2. Sentiment (20%):</b> 1:1 mapping of the Fear & Greed Index. Identifies when extreme retail exuberance or fear creates a divergence from macro fundamentals.</div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="logic-box"><b>5. Structure (10%):</b> Calculated as <i>(Current Funding / {S_FND}% Ceiling) * 100</i>. Higher funding rates indicate unsustainable leverage and immediate correction risk.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>2. Sentiment (20%):</b> 1:1 mapping of the Fear & Greed Index. Identifies cycle-peak exuberance.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>5. Structure (10%):</b> Linear risk scale for Funding Rates from 0% (healthy) to {S_FND}% (extreme leverage).</div>""", unsafe_allow_html=True)
 
 with m_col3:
-    st.markdown(f"""<div class="logic-box"><b>3. Technicals (20%):</b> 1:1 mapping of the CBBI Index. Aggregates multiple on-chain oscillators to track historical cycle peaks and troughs.</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="logic-box"><b>3. Technicals (20%):</b> 1:1 mapping of the CBBI Index. Tracks long-term cycle maturity via a dozen on-chain oscillators.</div>""", unsafe_allow_html=True)
 
 # --- 7. SIDEBAR DATA FEED ---
 st.sidebar.write(f"Bitcoin: `${d.get('btc',0):,.0f}`")
