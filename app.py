@@ -148,4 +148,5 @@ st.sidebar.write(f"BTC Dominance: `{raw.get('btc_dom')}`")
 st.sidebar.write(f"Fear & Greed: `{raw.get('fgi')}`")
 st.sidebar.write(f"CBBI Index: `{round(raw.get('cbbi',0), 1)}`")
 st.sidebar.write(f"ETF BTC Inflow (MoM): `{raw.get('etf')}%`")
-st.sidebar.write(f"Funding Rates:
+st.sidebar.write(f"Funding Rates: `{raw.get('fund')}%`")
+st.sidebar.write(f"SSR Ratio: `{raw.get('ssr')}`")
