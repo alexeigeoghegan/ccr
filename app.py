@@ -34,7 +34,8 @@ def norm_bipolar(val, bound, inv=False):
     except: return 50.0
 
 def create_mini_dial(label, value, weight):
-    clr = "#00ffcc" if value < 35 else "#fbbf24" if value < 70 else "#ef4444"
+    # Updated color logic: <60 Green, 60-79 Orange, >=80 Red
+    clr = "#00ffcc" if value < 60 else "#fbbf24" if value < 80 else "#ef4444"
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=value,
         title={'text': label, 'font': {'size': 18, 'color': '#ffffff', 'weight': 'bold'}},
@@ -75,9 +76,13 @@ risk_e = int(round(risk_e_fnd * 0.5 + risk_e_oi * 0.5))
 
 risk_score = int(round((risk_m*W_M) + (risk_s*W_S) + (risk_t*W_T) + (risk_a*W_A) + (risk_e*W_E)))
 
-if risk_score <= 35: act_label, act_color = "Accumulate", "#00ffcc"
-elif risk_score <= 70: act_label, act_color = "Hold", "#fbbf24"
-else: act_label, act_color = "Take Profits", "#ef4444"
+# Updated Threshold Logic
+if risk_score < 60: 
+    act_label, act_color = "Accumulate", "#00ffcc"
+elif risk_score < 80: 
+    act_label, act_color = "Hold", "#fbbf24"
+else: 
+    act_label, act_color = "Take Profits", "#ef4444"
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
@@ -125,9 +130,10 @@ fig_main = go.Figure(go.Indicator(
         'bar': {'color': act_color},
         'bgcolor': "rgba(0,0,0,0)",
         'steps': [
-            {'range': [0, 35], 'color': 'rgba(0, 255, 204, 0.1)'},
-            {'range': [35, 71], 'color': 'rgba(251, 191, 36, 0.1)'},
-            {'range': [71, 100], 'color': 'rgba(239, 68, 68, 0.1)'}]}))
+            {'range': [0, 60], 'color': 'rgba(0, 255, 204, 0.1)'},   # Accumulate
+            {'range': [60, 80], 'color': 'rgba(251, 191, 36, 0.1)'},  # Hold
+            {'range': [80, 100], 'color': 'rgba(239, 68, 68, 0.1)'}  # Take Profit
+        ]}))
 
 # Elevated and Enlarged Action Text
 fig_main.add_annotation(x=0.5, y=0.45, text=act_label.upper(), showarrow=False, 
@@ -141,17 +147,21 @@ st.markdown("---")
 st.subheader("Threshold Specifications")
 st.markdown(f"""
 <div class="logic-box">
-    <b>(M) Macro (40%):</b> 50% Financial Momentum (DXY, Yields, Oil) / 50% Global Liquidity (M2). Uses Bipolar scale (±{B_DXY}% DXY, ±{B_YLD}% Yields).<br><br>
-    <b>(A) Adoption (10%):</b> Blends institutional demand (BTC ETF Flows) and crypto-native liquidity (Stablecoin Supply). Uses ±5% bipolar scale.<br><br>
-    <b>(S) Sentiment (20%):</b> Direct 1:1 mapping of the Fear & Greed Index to identify psychological extremes.<br><br>
-    <b>(T) Technicals (20%):</b> Maps the CBBI Index 1:1, aggregating multiple on-chain oscillators to track overall cycle maturity.<br><br>
-    <b>(E) Exposure (10%):</b> Monitors structural leverage via Funding Rates (0% to {S_FND}%) and Open Interest (OI) MoM change (±{B_OI}%).
+    <b>Strategy Logic:</b> Indicators are mapped to a 0-100 risk scale. <br>
+    🟢 <b>0-59 (Accumulate):</b> Low risk; focus on building positions.<br>
+    🟡 <b>60-79 (Hold):</b> Moderate risk; maintain current exposure.<br>
+    🔴 <b>80-100 (Take Profits):</b> High risk; focus on capital preservation.<br><br>
+    <b>(M) Macro (40%):</b> DXY, Yields, Oil, and Global M2 Liquidity.<br>
+    <b>(A) Adoption (10%):</b> BTC ETF Flows and Stablecoin Supply growth.<br>
+    <b>(S) Sentiment (20%):</b> Fear & Greed Index.<br>
+    <b>(T) Technicals (20%):</b> CBBI Index (multi-oscillator aggregate).<br>
+    <b>(E) Exposure (10%):</b> Funding Rates and Open Interest momentum.
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown(f"""
     <div class="instr-box">
-        <b>Purpose:</b> This dashboard aggregates various data to help determine risk optimal capital allocation.
+        <b>Purpose:</b> This dashboard aggregates various data to help determine risk-optimal capital allocation.
         <br><i><b>Disclaimer:</b> Not financial advice. Data for educational purposes only.</i>
     </div>
     """, unsafe_allow_html=True)
