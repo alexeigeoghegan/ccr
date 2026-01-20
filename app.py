@@ -2,10 +2,11 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import urllib3
+import requests
 import plotly.graph_objects as go
 from datetime import datetime
 
-# Disable SSL warnings
+# Disable SSL warnings for cleaner logs
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 1. PAGE CONFIGURATION ---
@@ -46,18 +47,30 @@ def create_mini_dial(label, value, weight):
 
 @st.cache_data(ttl=3600)
 def get_live_data():
-    # 2026 Monthly Strategy Snapshot
+    # Base Fallback Data
     d = {'btc': 94230, 'dxy': 98.60, 'yield': 4.18, 'oil': 57.2, 'fgi': 48, 'cbbi': 54, 
          'm2_mom': 0.65, 'etf_mom': 1.1, 'stable_mom': 2.4, 'fund': 0.011, 'oi_mom': 4.2}
+    
+    # FETCH LIVE FEAR & GREED (Fix for sentiment accuracy)
+    try:
+        fgi_req = requests.get("https://api.alternative.me/fng/", timeout=5)
+        if fgi_req.status_code == 200:
+            d['fgi'] = int(fgi_req.json()['data'][0]['value'])
+    except: pass
+
+    # FETCH MARKET DATA
     try:
         data = yf.download(["BTC-USD", "DX-Y.NYB", "^TNX", "CL=F"], period="2mo", progress=False)['Close'].ffill().dropna()
         def calc_mom(col):
             curr, prev = data[col].iloc[-1], data[col].iloc[-22]
             return ((curr - prev) / prev) * 100, curr
+        
         dxy_m, dxy_c = calc_mom("DX-Y.NYB")
         yld_m, yld_c = calc_mom("^TNX")
         oil_m, oil_c = calc_mom("CL=F")
-        d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': dxy_c, 'yield': yld_c, 'oil': oil_c, 'dxy_mom': dxy_m, 'yld_mom': yld_m, 'oil_mom': oil_m})
+        
+        d.update({'btc': data["BTC-USD"].iloc[-1], 'dxy': dxy_c, 'yield': yld_c, 'oil': oil_c, 
+                  'dxy_mom': dxy_m, 'yld_mom': yld_m, 'oil_mom': oil_m})
     except:
         d.update({'dxy_mom': 0.46, 'yld_mom': 0.72, 'oil_mom': 3.10})
     return d
@@ -76,35 +89,27 @@ risk_e = int(round(risk_e_fnd * 0.5 + risk_e_oi * 0.5))
 
 risk_score = int(round((risk_m*W_M) + (risk_s*W_S) + (risk_t*W_T) + (risk_a*W_A) + (risk_e*W_E)))
 
-# Updated Threshold Logic
-if risk_score < 60: 
-    act_label, act_color = "Accumulate", "#00ffcc"
-elif risk_score < 80: 
-    act_label, act_color = "Hold", "#fbbf24"
-else: 
-    act_label, act_color = "Take Profits", "#ef4444"
+# NEW THRESHOLDS: Accumulate < 60 | Hold 60-79 | Take Profits >= 80
+if risk_score < 60: act_label, act_color = "Accumulate", "#00ffcc"
+elif risk_score < 80: act_label, act_color = "Hold", "#fbbf24"
+else: act_label, act_color = "Take Profits", "#ef4444"
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
     st.title("Drivers")
     st.markdown(f"**Updated:** {datetime.now().strftime('%d %b %Y')}")
-    
     st.markdown('<div class="sidebar-header">Macro (M)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">DXY Index</p><p class="data-value">{d["dxy"]:.2f} ({d.get("dxy_mom",0):+.2f}%)</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">10Y Yield</p><p class="data-value">{d["yield"]:.2f}% ({d.get("yld_mom",0):+.2f}%)</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Global M2 MoM</p><p class="data-value">{d["m2_mom"]}%</p>', unsafe_allow_html=True)
-
     st.markdown('<div class="sidebar-header">Adoption (A)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">ETF Inflow MoM</p><p class="data-value">{d["etf_mom"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Stablecoin Growth</p><p class="data-value">{d["stable_mom"]}%</p>', unsafe_allow_html=True)
-
     st.markdown('<div class="sidebar-header">Sentiment (S)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Fear & Greed</p><p class="data-value">{d["fgi"]}</p>', unsafe_allow_html=True)
-
     st.markdown('<div class="sidebar-header">Technicals (T)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">CBBI Index</p><p class="data-value">{d["cbbi"]}</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">BTC Price</p><p class="data-value">${d["btc"]:,.0f}</p>', unsafe_allow_html=True)
-
     st.markdown('<div class="sidebar-header">Exposure (E)</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Funding Rate</p><p class="data-value">{d["fund"]}%</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="data-label">Open Interest MoM</p><p class="data-value">{d["oi_mom"]:+.2f}%</p>', unsafe_allow_html=True)
@@ -130,12 +135,10 @@ fig_main = go.Figure(go.Indicator(
         'bar': {'color': act_color},
         'bgcolor': "rgba(0,0,0,0)",
         'steps': [
-            {'range': [0, 60], 'color': 'rgba(0, 255, 204, 0.1)'},   # Accumulate
-            {'range': [60, 80], 'color': 'rgba(251, 191, 36, 0.1)'},  # Hold
-            {'range': [80, 100], 'color': 'rgba(239, 68, 68, 0.1)'}  # Take Profit
-        ]}))
+            {'range': [0, 60], 'color': 'rgba(0, 255, 204, 0.1)'},
+            {'range': [60, 80], 'color': 'rgba(251, 191, 36, 0.1)'},
+            {'range': [80, 100], 'color': 'rgba(239, 68, 68, 0.1)'}]} ))
 
-# Elevated and Enlarged Action Text
 fig_main.add_annotation(x=0.5, y=0.45, text=act_label.upper(), showarrow=False, 
                         font=dict(size=48, color=act_color, weight="bold"))
 
@@ -144,24 +147,20 @@ st.plotly_chart(fig_main, use_container_width=True)
 
 # Detailed Threshold Box
 st.markdown("---")
-st.subheader("Threshold Specifications")
+st.subheader("Strategy Specifications")
 st.markdown(f"""
 <div class="logic-box">
-    <b>Strategy Logic:</b> Indicators are mapped to a 0-100 risk scale. <br>
-    🟢 <b>0-59 (Accumulate):</b> Low risk; focus on building positions.<br>
-    🟡 <b>60-79 (Hold):</b> Moderate risk; maintain current exposure.<br>
-    🔴 <b>80-100 (Take Profits):</b> High risk; focus on capital preservation.<br><br>
-    <b>(M) Macro (40%):</b> DXY, Yields, Oil, and Global M2 Liquidity.<br>
-    <b>(A) Adoption (10%):</b> BTC ETF Flows and Stablecoin Supply growth.<br>
-    <b>(S) Sentiment (20%):</b> Fear & Greed Index.<br>
-    <b>(T) Technicals (20%):</b> CBBI Index (multi-oscillator aggregate).<br>
-    <b>(E) Exposure (10%):</b> Funding Rates and Open Interest momentum.
+    <b>Market Zones:</b><br>
+    🟢 <b>0-59 Accumulate:</b> Historically favorable risk/reward for long-term spot positions.<br>
+    🟡 <b>60-79 Hold:</b> Market shows moderate heat; avoid new leverage, maintain spot holdings.<br>
+    🔴 <b>80-100 Take Profits:</b> Extreme euphoria or structural weakness; prioritize capital preservation.<br><br>
+    <b>Risk Composition:</b> Macro (40%), Sentiment (20%), Technicals (20%), Adoption (10%), Exposure (10%).
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown(f"""
     <div class="instr-box">
-        <b>Purpose:</b> This dashboard aggregates various data to help determine risk-optimal capital allocation.
+        <b>Purpose:</b> Aggregates macro and on-chain data to identify risk-optimal capital allocation zones.
         <br><i><b>Disclaimer:</b> Not financial advice. Data for educational purposes only.</i>
     </div>
     """, unsafe_allow_html=True)
