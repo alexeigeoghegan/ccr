@@ -129,4 +129,21 @@ def get_historical_data():
     btc_base = 70000
     btc_prices = [btc_base + (i*100) + np.random.randint(-3000, 3000) for i in range(180)]
     melt_indices = [30 + (np.sin(i/10)*15) + np.random.randint(-5, 5) for i in range(180)]
-    return pd.DataFrame({"Date": dates
+    return pd.DataFrame({"Date": dates, "BTC Price": btc_prices, "MELT Index": melt_indices})
+
+df = get_historical_data()
+
+fig_corr = go.Figure()
+fig_corr.add_trace(go.Scatter(x=df['Date'], y=df['BTC Price'], name="BTC Price", line=dict(color='#ffffff', width=2)))
+fig_corr.add_trace(go.Scatter(x=df['Date'], y=df['MELT Index'], name="MELT Index", line=dict(color='#00ffcc', width=3), yaxis="y2"))
+
+fig_corr.update_layout(
+    template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    yaxis=dict(title="BTC Price ($)", side="left", gridcolor="#222"),
+    yaxis2=dict(title="MELT Index (%)", side="right", overlaying="y", range=[0, 100], showgrid=False),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    margin=dict(l=50, r=50, t=50, b=50), height=400
+)
+st.plotly_chart(fig_corr, use_container_width=True)
+
+st.caption("SYSTEM OPERATIONAL // DATA REFRESH: 3600S // SESSION AUTH: 2026-REACTOR-1")
