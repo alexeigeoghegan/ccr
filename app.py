@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # --- 1. INDUSTRIAL THEME CONFIG ---
 st.set_page_config(page_title="MELT Index | Control Room", layout="wide")
@@ -19,9 +19,28 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. REACTOR CORE LOGIC ---
+# --- 2. MACRO SCORE RE-ENGINEERING (Z-SCORE LOGIC) ---
+# Inputs for Jan 2026 Telemetry
+m2_z = 1.2          # Global M2 Growth Z-Score
+net_liq_z = -0.5    # US Net Liquidity Growth Z-Score
+dxy_z = 0.8         # DXY Growth Z-Score
+hike_cut_ratio = 20 # Existing Hike/Cut Ratio
+
+def calculate_macro_pillar(m2, liq, dxy, hc):
+    # Mapping Z-scores (-3 to 3) to 0-100 scale for the dial
+    # Logic: High M2/Liq = Low Risk (lower score), High DXY = High Risk
+    m2_s = np.clip((1 - (m2 + 3) / 6) * 100, 0, 100)
+    liq_s = np.clip((1 - (liq + 3) / 6) * 100, 0, 100)
+    dxy_s = np.clip(((dxy + 3) / 6) * 100, 0, 100)
+    
+    # Each sub-component is 10% of the TOTAL MELT Index (which is 40% total for Macro)
+    # Internally we calculate the Macro Pillar score (0-100)
+    return (m2_s * 0.25) + (liq_s * 0.25) + (dxy_s * 0.25) + (hc * 0.25)
+
+# --- 3. REACTOR CORE LOGIC ---
 W_M, W_E, W_L, W_T = 0.4, 0.2, 0.2, 0.2
-M_VAL, E_VAL, L_VAL = 20, 29, 54
+M_VAL = int(calculate_macro_pillar(m2_z, net_liq_z, dxy_z, hike_cut_ratio))
+E_VAL, L_VAL = 29, 54
 
 @st.cache_data(ttl=3600)
 def get_technicals():
@@ -30,7 +49,7 @@ def get_technicals():
         r = requests.get("https://colintalkscrypto.com/cbbi/data/latest.json", timeout=3)
         latest_key = sorted(r.json().keys())[-1]
         return int(r.json()[latest_key] * 100)
-    except: return 50 # SENSOR BLIND DEFAULT
+    except: return 50
 
 T_VAL = get_technicals()
 final_index = int((M_VAL * W_M) + (E_VAL * W_E) + (L_VAL * W_L) + (T_VAL * W_T))
@@ -44,7 +63,7 @@ def get_risk_meta(score):
 
 strategy, strategy_color = get_risk_meta(final_index)
 
-# --- 3. TELEMETRY FETCHING (2026) ---
+# --- 4. TELEMETRY FETCHING ---
 @st.cache_data(ttl=3600)
 def fetch_telemetry():
     tickers = {"BTC": "BTC-USD", "GOLD": "GC=F", "DXY": "DX-Y.NYB", "10Y": "^TNX", "OIL": "CL=F"}
@@ -56,16 +75,14 @@ def fetch_telemetry():
             mom = ((curr - h['Close'].iloc[-22]) / h['Close'].iloc[-22]) * 100
             data[key] = (curr, mom)
         except: data[key] = (0.0, 0.0)
-    
-    # 2026 External Indices
     data["M2"] = (98352.0, 0.17)
-    data["ALT_SEASON"] = (17, -5.5) # Altcoin Index
-    data["BBI"] = "UNDERVALUED PHASE" # Bitcoin Bubble Index Status (Static for now)
+    data["ALT_SEASON"] = (17, -5.5)
+    data["BBI"] = "UNDERVALUED PHASE"
     return data
 
 tel = fetch_telemetry()
 
-# --- 4. GAUGE ENGINE ---
+# --- 5. GAUGE ENGINE ---
 def create_gauge(value, title, is_master=False, is_failed=False):
     _, color = get_risk_meta(value)
     bg = "#ffffff" if is_failed else "#1a1a1a"
@@ -87,11 +104,10 @@ def create_gauge(value, title, is_master=False, is_failed=False):
                       paper_bgcolor='rgba(0,0,0,0)', font={'family': "Courier New"}, margin=dict(l=30, r=30, t=50, b=30), height=550 if is_master else 260)
     return fig
 
-# --- 5. UI LAYOUT ---
+# --- 6. UI LAYOUT ---
 st.write("### MELT INDEX")
 st.divider()
 
-# Telemetry Bar
 m_cols = st.columns(8)
 def r_met(col, label, val, mom, pref="$", suff="", is_txt=False):
     if is_txt:
@@ -120,35 +136,5 @@ with p_cols[3]:
     st.plotly_chart(create_gauge(T_VAL, "TECHNICALS (T)", is_failed=(T_VAL==50)), use_container_width=True)
     if T_VAL == 50: st.markdown("<p class='sensor-failure'>⚠️ SENSOR FAILURE: OFFLINE</p>", unsafe_allow_html=True)
 
-# --- 6. 500-DAY SMOOTHED CHART ---
-st.write("### 📉 500-DAY CYCLE ANALYSIS (DAILY READINGS)")
-
-@st.cache_data
-def get_hist_daily():
-    dates = pd.date_range(end=datetime.now(), periods=500)
-    btc = [85000 + (np.sin(i/50)*10000) + np.random.randint(-2000,2000) for i in range(500)]
-    idx = [50 + (np.cos(i/40)*35) + np.random.randint(-5,5) for i in range(500)]
-    return pd.DataFrame({"Date": dates, "BTC": btc, "Index": idx})
-
-df = get_hist_daily()
-fig = go.Figure()
-
-# BTC Background Line
-fig.add_trace(go.Scatter(x=df['Date'], y=df['BTC'], name="BTC Price", line=dict(color='rgba(255,255,255,0.3)', width=1, shape='spline')))
-
-# Segmented Index Line for Color Coding
-for i in range(len(df)-1):
-    val = df['Index'].iloc[i]
-    color = '#00ffcc' # Default
-    if val >= 80: color = '#8b0000' # Dark Red
-    elif val <= 20: color = '#006400' # Dark Green
-    
-    fig.add_trace(go.Scatter(x=df['Date'].iloc[i:i+2], y=df['Index'].iloc[i:i+2],
-                             line=dict(color=color, width=3, shape='spline'),
-                             showlegend=False, yaxis="y2", hoverinfo='skip'))
-
-fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                  yaxis=dict(title="BTC Price ($)", side="left", gridcolor="#222"),
-                  yaxis2=dict(title="MELT Index", side="right", overlaying="y", range=[0, 100], showgrid=False),
-                  height=500, margin=dict(t=50))
-st.plotly_chart(fig, use_container_width=True)
+st.divider()
+st.caption("REACTOR STATUS: STABLE // LIQUIDITY PROXIES ACTIVE // NO CHART HISTORY RECORDED")
