@@ -1,52 +1,63 @@
-def main():
-    # Fetch Data
-    btc_price = fetch_btc_price()
-    m = fetch_macro_m()
-    e = fetch_emotion_e()
-    l = fetch_leverage_l()
-    t = fetch_technicals_t()
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import requests
+import plotly.graph_objects as go
 
-    # Weighted Calculation
-    final_score = (m * 0.4) + (e * 0.2) + (l * 0.2) + (t * 0.2)
-    strategy_label, strategy_color = get_risk_meta(final_score)
+# 1. Page Config (Must be the first Streamlit command)
+st.set_page_config(page_title="MELT Index", layout="wide")
 
-    # UI Header
-    st.title("📊 MELT Index")
-    st.markdown(f"**Bitcoin Market Cycle Risk Dashboard** | Price: `${btc_price:,.2f}`")
-    st.divider()
-
-    # Main Dial Row
-    col_left, col_right = st.columns([2, 1])
-    
-    with col_left:
-        st.plotly_chart(create_gauge(final_score, "MASTER RISK INDEX", is_master=True), use_container_width=True)
-
-    with col_right:
-        # Using a cleaner f-string approach to avoid SyntaxErrors
-        st.markdown(
-            f"""
-            <div style="border: 2px solid {strategy_color}; border-radius: 15px; padding: 20px; text-align: center;">
-                <p style="color: #888; margin: 0;">Current Strategy</p>
-                <h1 style="color: {strategy_color}; font-size: 3rem; margin: 10px 0;">{strategy_label.upper()}</h1>
-                <p style="color: white; font-size: 1.2rem;">Risk Score: <strong>{final_score:.1f} / 100</strong></p>
-            </div>
-            """, 
-            unsafe_allow_html=True
-        )
+# 2. Simplified Data Fetchers (with basic error handling)
+@st.cache_data(ttl=600)
+def get_data():
+    try:
+        # BTC Price
+        btc = yf.Ticker("BTC-USD").history(period="1d")['Close'].iloc[-1]
         
-        st.info(f"""
-        **Methodology:**
-        - **Macro (40%):** Global liquidity & rate cycles.
-        - **Emotion (20%):** Sentiment & crowd behavior.
-        - **Leverage (20%):** Derivatives & liquidation risk.
-        - **Technicals (20%):** On-chain cycle metrics (CBBI).
-        """)
+        # Fear & Greed
+        fng_res = requests.get("https://api.alternative.me/fng/?limit=1").json()
+        fng = float(fng_res['data'][0]['value'])
+        
+        # CBBI Technicals
+        cbbi_res = requests.get("https://colintalkscrypto.com/cbbi/data/latest.json").json()
+        cbbi = float(list(cbbi_res.values())[-1] * 100)
+        
+        return btc, fng, cbbi
+    except Exception as e:
+        st.error(f"Data Fetch Error: {e}")
+        return 0.0, 50.0, 50.0
 
-    # Pillar Row
-    st.subheader("Component Pillars")
-    p1, p2, p3, p4 = st.columns(4)
+# 3. Execution
+st.title("🔥 MELT Index Dashboard")
+
+with st.spinner("Fetching market data..."):
+    btc_price, emotion_score, tech_score = get_data()
     
-    with p1: st.plotly_chart(create_gauge(m, "Macro (M)"), use_container_width=True)
-    with p2: st.plotly_chart(create_gauge(e, "Emotion (E)"), use_container_width=True)
-    with p3: st.plotly_chart(create_gauge(l, "Leverage (L)"), use_container_width=True)
-    with p4: st.plotly_chart(create_gauge(t, "Technicals (T)"), use_container_width=True)
+    # Placeholders for missing APIs
+    macro_score = 40.0 
+    leverage_score = 60.0
+
+# 4. Calculation
+final_score = (macro_score * 0.4) + (emotion_score * 0.2) + (leverage_score * 0.2) + (tech_score * 0.2)
+
+# 5. Simple Layout (No complex CSS for now)
+st.metric("Bitcoin Price", f"${btc_price:,.2f}")
+
+col1, col2 = st.columns(2)
+with col1:
+    st.write(f"### Master Risk Score: {final_score:.1f}")
+    
+    # Quick Plotly Gauge
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = final_score,
+        gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': "#00ffcc"}}
+    ))
+    st.plotly_chart(fig)
+
+with col2:
+    st.write("### Strategy Breakdown")
+    st.write(f"- **Macro:** {macro_score}")
+    st.write(f"- **Emotion:** {emotion_score}")
+    st.write(f"- **Leverage:** {leverage_score}")
+    st.write(f"- **Technicals:** {tech_score}")
