@@ -113,3 +113,39 @@ def r_met(col, label, val, mom, pref="$", suff="", is_txt=False):
     col.markdown(f"<div class='telemetry-label'>{label}</div><div class='telemetry-val'>{pref}{val:,.2f}{suff}</div><div class='telemetry-change' style='color:{c}'>{mom:+.2f}% MoM</div>", unsafe_allow_html=True)
 
 r_met(t_cols[0], "BITCOIN", tel["BTC"][0], tel["BTC"][1])
+r_met(t_cols[1], "GOLD", tel["GOLD"][0], tel["GOLD"][1])
+r_met(t_cols[2], "OIL", tel["OIL"][0], tel["OIL"][1])
+r_met(t_cols[3], "DXY INDEX", tel["DXY"][0], tel["DXY"][1], pref="")
+r_met(t_cols[4], "TOTAL CRYPTO CAP", tel["TOTAL_MCAP"][0], tel["TOTAL_MCAP"][1], suff="B")
+r_met(t_cols[5], "MVRV Z-SCORE x10", tel["MVRV_X10"][0], tel["MVRV_X10"][1], pref="")
+r_met(t_cols[6], "GLOBAL M2", tel["M2"][0], tel["M2"][1], suff="B")
+r_met(t_cols[7], "ALT SEASON", tel["ALT_SEASON"][0], tel["ALT_SEASON"][1], pref="")
+
+st.divider()
+
+# Master Index Section
+st.plotly_chart(create_gauge(final_index, "", True), use_container_width=True)
+st.markdown(f"<div class='master-schematic'>ALGORITHM: Σ (M * 0.4) + (E * 0.2) + (L * 0.2) + (T * 0.2)</div>", unsafe_allow_html=True)
+
+# Pillar Section
+p_cols = st.columns(4)
+with p_cols[0]:
+    st.plotly_chart(create_gauge(M_VAL, "MACRO (M)"), use_container_width=True)
+    st.markdown("""<div class='schematic-text'><b>INGREDIENTS:</b><br>• Global M2 Z-Score<br>• US Net Liq Z-Score<br>• DXY Growth Z-Score<br>• Hike/Cut Ratio<br><br><b>LOGIC:</b> Compiles cross-asset liquidity velocity. Higher scores reflect tightening financial conditions.</div>""", unsafe_allow_html=True)
+
+with p_cols[1]:
+    st.plotly_chart(create_gauge(E_VAL, "EMOTION (E)"), use_container_width=True)
+    st.markdown("""<div class='schematic-text'><b>INGREDIENTS:</b><br>• Fear & Greed Index<br>• Retail Volume Proxy<br>• Social Sentiment<br><br><b>LOGIC:</b> Measures market consensus. High scores reflect peak euphoria, creating a contrarian risk signal.</div>""", unsafe_allow_html=True)
+
+with p_cols[2]:
+    st.plotly_chart(create_gauge(L_VAL, "LEVERAGE (L)"), use_container_width=True)
+    st.markdown("""<div class='schematic-text'><b>INGREDIENTS:</b><br>• CoinGlass CDRI Index<br>• Open Interest (OI)<br>• Perp Funding Rates<br><br><b>LOGIC:</b> Tracks credit fragility. High scores indicate a market vulnerable to liquidation cascades.</div>""", unsafe_allow_html=True)
+
+with p_cols[3]:
+    is_failed = (T_VAL == 50)
+    st.plotly_chart(create_gauge(T_VAL, "TECHNICALS (T)", is_failed=is_failed), use_container_width=True)
+    st.markdown("""<div class='schematic-text'><b>INGREDIENTS:</b><br>• CBBI Metric Agg.<br>• MVRV Z-Score<br>• Halving Cycle Proxy<br><br><b>LOGIC:</b> Evaluates valuation vs on-chain realized cost basis. High scores indicate significant overvaluation.</div>""", unsafe_allow_html=True)
+    if is_failed: st.markdown("<p class='sensor-failure'>⚠️ SENSOR FAILURE: OFFLINE</p>", unsafe_allow_html=True)
+
+st.divider()
+st.caption("REACTOR STATUS: STABLE // TOTAL MARKET CAPITALIZATION: UP // MVRV Z-SCORE: NOMINAL")
