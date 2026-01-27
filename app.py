@@ -1,134 +1,158 @@
 import streamlit as st
-import pandas as pd
 import yfinance as yf
 import requests
+import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# --- 1. CONFIG & STYLING ---
-st.set_page_config(page_title="BTC Risk Allocation Index", layout="wide")
-
-# Dark mode styling to match the 2026 aesthetic
+# --- CONFIGURATION & THEME ---
+st.set_page_config(page_title="MELT Index Dashboard", layout="wide")
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; color: white; }
-    .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; }
-    [data-testid="stMetricValue"] { color: #58a6ff; }
+    .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA FETCHING ---
+# --- DATA FETCHING FUNCTIONS ---
+
 @st.cache_data(ttl=3600)
-def fetch_data():
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
+def get_header_metrics():
+    """Fetches high-level market data for the top ticker bar."""
+    tickers = {
+        "BTC": "BTC-USD",
+        "Gold": "GC=F",
+        "DXY": "DX-Y.NYB",
+        "Oil": "CL=F",
+        "10Y Yield": "^TNX"
+    }
+    data = {}
+    for name, sym in tickers.items():
+        try:
+            val = yf.Ticker(sym).history(period="1d")['Close'].iloc[-1]
+            data[name] = val
+        except:
+            data[name] = 0.0
     
-    # auto_adjust helps maintain consistency
-    btc = yf.download("BTC-USD", start=start_date, end=end_date, auto_adjust=True)
-    dxy = yf.download("DX-Y.NYB", start=start_date, end=end_date, auto_adjust=True)
+    # Mocking Market Cap / Stablecoin ratio (Requires CoinGecko/CMC API Key usually)
+    # In a production env, you'd use: requests.get(COINGECKO_URL)
+    data["Total Market Cap"] = 2.45e12 # Trillions
+    data["Stablecoin Cap"] = 160e9    # Billions
+    data["Ratio"] = data["Total Market Cap"] / data["Stablecoin Cap"]
     
-    # FIX: Flatten MultiIndex columns if present
-    if isinstance(btc.columns, pd.MultiIndex):
-        btc.columns = btc.columns.get_level_values(0)
-    if isinstance(dxy.columns, pd.MultiIndex):
-        dxy.columns = dxy.columns.get_level_values(0)
-    
-    # Sentiment Data (Fear & Greed Index)
-    fng_res = requests.get("https://api.alternative.me/fng/?limit=1").json()
-    fng_val = int(fng_res['data'][0]['value'])
-    
-    return btc, dxy, fng_val
+    return data
 
-# --- 3. RISK LOGIC ---
-def calculate_risk_score(btc, dxy, fng):
-    # Component 1: Sentiment (25% Weight)
-    # We use F&G directly; high greed = higher risk.
-    sentiment_risk = float(fng)
-    
-    # Component 2: Macro (25% Weight) - DXY Momentum
-    dxy['MA50'] = dxy['Close'].rolling(window=50).mean()
-    current_dxy = float(dxy['Close'].iloc[-1])
-    dxy_ma = float(dxy['MA50'].iloc[-1])
-    
-    # Risk-Off if DXY is strong (above its 50-day average)
-    macro_risk = 80.0 if current_dxy > dxy_ma else 20.0
-    
-    # Component 3: Overextension (50% Weight) - Price vs 200D Moving Average
-    btc['MA200'] = btc['Close'].rolling(window=200).mean()
-    curr_btc = float(btc['Close'].iloc[-1])
-    ma200_btc = float(btc['MA200'].iloc[-1])
-    
-    extension_ratio = curr_btc / ma200_btc
-    # Scale: 1.0 (at mean) = 0 risk, 2.5 (parabolic) = 100 risk
-    ext_risk = min(100.0, max(0.0, (extension_ratio - 1.0) * 66.6))
-    
-    # Weighted Average Calculation
-    total_risk = (sentiment_risk * 0.25) + (macro_risk * 0.25) + (ext_risk * 0.50)
-    return round(total_risk, 2)
+def get_macro_score():
+    """M: Global Central Bank Tightening & GLP (20% + 20%)"""
+    # Note: MacroMicro doesn't offer a free open API without a subscription key.
+    # Defaulting to 50 for this demo logic.
+    return 50, False 
 
-# --- 4. DASHBOARD UI ---
-def main():
-    st.title("₿ Bitcoin Risk Allocation Index")
-    st.caption(f"Real-time Macro and Sentiment Analysis • 2026 Edition")
-    
+def get_emotion_score():
+    """E: Fear & Greed Index (20%)"""
     try:
-        btc, dxy, fng = fetch_data()
-        risk_score = calculate_risk_score(btc, dxy, fng)
-        
-        # Display Gauge
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            fig = go.Figure(go.Indicator(
-                mode = "gauge+number",
-                value = risk_score,
-                domain = {'x': [0, 1], 'y': [0, 1]},
-                title = {'text': "Current Risk Level", 'font': {'size': 24}},
-                gauge = {
-                    'axis': {'range': [0, 100], 'tickwidth': 1},
-                    'bar': {'color': "#ffffff"},
-                    'steps': [
-                        {'range': [0, 30], 'color': "#00cc96"}, # Green: Low Risk
-                        {'range': [30, 70], 'color': "#ffa15a"}, # Orange: Neutral
-                        {'range': [70, 100], 'color': "#ef553b"} # Red: High Risk
-                    ],
-                    'threshold': {
-                        'line': {'color': "white", 'width': 4},
-                        'thickness': 0.75,
-                        'value': risk_score
-                    }
-                }
-            ))
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "white", 'family': "Arial"})
-            st.plotly_chart(fig, use_container_width=True)
+        r = requests.get("https://api.alternative.me/fng/")
+        return int(r.json()['data'][0]['value']), True
+    except:
+        return 50, False
 
-        # Actionable Insight Box
-        st.divider()
-        if risk_score < 35:
-            st.success("### Signal: INCREASE RISK (Aggressive Accumulation)")
-            st.write("Market sentiment is fearful and the price is near historical support. Macro conditions favor Bitcoin.")
-        elif risk_score > 70:
-            st.error("### Signal: DE-RISK (Increase Cash)")
-            st.write("Extreme greed detected and Bitcoin is overextended relative to its moving average. Defensive rotation advised.")
-        else:
-            st.info("### Signal: NEUTRAL (Maintain Positions)")
-            st.write("The market is in a healthy equilibrium. No immediate action required; stick to your current allocation.")
+def get_leverage_score():
+    """L: CoinGlass CDRI (20%)"""
+    # Requires API Key: https://open-api.coinglass.com/
+    return 55, False
 
-        # Metric Details
-        st.subheader("Core Metric Breakdown")
-        m1, m2, m3 = st.columns(3)
-        
-        # Current Price vs 200D MA
-        curr_price = float(btc['Close'].iloc[-1])
-        ma200 = float(btc['MA200'].iloc[-1])
-        price_diff = ((curr_price / ma200) - 1) * 100
-        
-        m1.metric("BTC Price", f"${curr_price:,.0f}", f"{price_diff:.1f}% vs MA200")
-        m2.metric("Fear & Greed", f"{fng}/100", "Sentiment")
-        m3.metric("DXY Index", f"{float(dxy['Close'].iloc[-1]):.2f}", "Macro Filter")
+def get_technicals_score():
+    """T: CBBI (10%) & MVRV (10%)"""
+    # CBBI often requires scraping or their specific JSON endpoint
+    # MVRV can be calculated via on-chain providers
+    cbbi = 45 
+    mvrv_raw = 2.1 # Example MVRV Z-Score
+    mvrv_scaled = min(100, max(0, mvrv_raw * 10))
+    return (cbbi * 0.5) + (mvrv_scaled * 0.5), False
 
-    except Exception as e:
-        st.error(f"Critical Error: {e}")
-        st.info("Troubleshooting: This is often caused by temporary API connection issues. Try refreshing the page.")
+# --- LOGIC & CALCULATIONS ---
 
-if __name__ == "__main__":
-    main()
+header = get_header_metrics()
+m_val, m_live = get_macro_score()
+e_val, e_live = get_emotion_score()
+l_val, l_live = get_leverage_score()
+t_val, t_live = get_technicals_score()
+
+# Weighted Calculation
+# Weights: Macro (40%), Emotion (20%), Leverage (20%), Tech (20%)
+melt_index = (m_val * 0.40) + (e_val * 0.20) + (l_val * 0.20) + (t_val * 0.20)
+
+# Strategy Label Logic
+if melt_index < 20:
+    label, color = "MELT UP IMMINENT", "#006400"
+elif 20 <= melt_index < 40:
+    label, color = "SAFE", "#90EE90"
+elif 40 <= melt_index < 60:
+    label, color = "STABLE", "#FFA500"
+elif 60 <= melt_index < 80:
+    label, color = "DANGER", "#FF7F7F"
+else:
+    label, color = "MELT DOWN IMMINENT", "#8B0000"
+
+# --- UI LAYOUT ---
+
+st.title("🌋 MELT Index")
+st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+# Top Metric Bar
+m1, m2, m3, m4, m5, m6 = st.columns(6)
+m1.metric("BTC Price", f"${header['BTC']:,.0f}")
+m2.metric("Gold", f"${header['Gold']:,.2f}")
+m3.metric("DXY", f"{header['DXY']:.2f}")
+m4.metric("10Y Yield", f"{header['10Y Yield']:.2f}%")
+m5.metric("Crypto Cap", f"${header['Total Market Cap']/1e12:.2f}T")
+m6.metric("Cap/Stable Ratio", f"{header['Ratio']:.1f}x")
+
+st.divider()
+
+# Main Gauge
+fig = go.Figure(go.Indicator(
+    mode = "gauge+number",
+    value = melt_index,
+    domain = {'x': [0, 1], 'y': [0, 1]},
+    title = {'text': f"<b>{label}</b>", 'font': {'size': 24, 'color': color}},
+    gauge = {
+        'axis': {'range': [0, 100]},
+        'bar': {'color': color},
+        'steps': [
+            {'range': [0, 20], 'color': "#006400"},
+            {'range': [20, 40], 'color': "#90EE90"},
+            {'range': [40, 60], 'color': "#FFA500"},
+            {'range': [60, 80], 'color': "#FF7F7F"},
+            {'range': [80, 100], 'color': "#8B0000"}
+        ],
+    }
+))
+fig.update_layout(height=400, margin=dict(t=50, b=0))
+st.plotly_chart(fig, use_container_width=True)
+
+# Pillar Columns
+st.subheader("Component Pillars")
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    st.metric("Macro (M)", f"{m_val}%", delta="Live" if m_live else "Manual/Default")
+    st.caption("Central Bank Tightening & GLP")
+
+with c2:
+    st.metric("Emotion (E)", f"{e_val}%", delta="Live" if e_live else "Manual/Default")
+    st.caption("Fear & Greed Index")
+
+with c3:
+    st.metric("Leverage (L)", f"{l_val}%", delta="Live" if l_live else "Manual/Default")
+    st.caption("CoinGlass CDRI")
+
+with c4:
+    st.metric("Technicals (T)", f"{t_val}%", delta="Live" if t_live else "Manual/Default")
+    st.caption("CBBI & MVRV Z-Score")
+
+st.info("""
+**Methodology:** The MELT Index aggregates market-wide risk by combining Macro conditions (40%), 
+Sentiment (20%), Derivatives Leverage (20%), and On-chain Technicals (20%). 
+Lower scores represent 'generational' buying opportunities; higher scores suggest exit-level risk.
+""")
