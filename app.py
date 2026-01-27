@@ -16,25 +16,24 @@ st.markdown("""
     .telemetry-label { font-size: 0.75rem; color: #888; font-family: 'Courier New', monospace; text-transform: uppercase; }
     .telemetry-val { font-size: 1.2rem; font-weight: bold; color: #ffffff; }
     .telemetry-change { font-size: 0.75rem; font-family: monospace; }
+    .schematic-text { font-size: 0.85rem; color: #888; font-family: 'Courier New', monospace; line-height: 1.4; padding: 10px; border-left: 1px solid #444; margin-top: -20px; }
+    .master-schematic { text-align: center; color: #00ffcc; font-family: 'Courier New', monospace; margin-top: -30px; margin-bottom: 30px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. THE RAOUL PAL "LIQUIDITY IMPULSE" MACRO ENGINE ---
-# Advanced Variables for Jan 2026
-m2_z = 1.2          # Global M2 Growth Z-Score
-net_liq_z = -0.5    # US Net Liquidity Growth Z-Score
-dxy_z = 0.8         # DXY Growth Z-Score
-hike_cut_ratio = 20 # Global Central Bank Policy
+# --- 2. ENGINE LOGIC ---
+W_M, W_E, W_L, W_T = 0.4, 0.2, 0.2, 0.2
+
+# Macro Variables (Jan 2026 Telemetry)
+m2_z, net_liq_z, dxy_z, hike_cut_ratio = 1.2, -0.5, 0.8, 20
 
 def calculate_macro_pillar(m2, liq, dxy, hc):
-    # Mapping Z-scores to 0-100 (High score = High Risk)
+    # Mapping Z-scores (-3 to 3) to 0-100 (High = High Risk)
     m2_s = np.clip((1 - (m2 + 3) / 6) * 100, 0, 100)
     liq_s = np.clip((1 - (liq + 3) / 6) * 100, 0, 100)
     dxy_s = np.clip(((dxy + 3) / 6) * 100, 0, 100)
     return int((m2_s * 0.25) + (liq_s * 0.25) + (dxy_s * 0.25) + (hc * 0.25))
 
-# --- 3. THE REACTOR CORE ---
-W_M, W_E, W_L, W_T = 0.4, 0.2, 0.2, 0.2
 M_VAL = calculate_macro_pillar(m2_z, net_liq_z, dxy_z, hike_cut_ratio)
 E_VAL, L_VAL = 29, 54
 
@@ -59,19 +58,10 @@ def get_risk_meta(score):
 
 strategy, strategy_color = get_risk_meta(final_index)
 
-# --- 4. PROFESSIONAL TELEMETRY (CROSS-ASSET) ---
+# --- 3. TELEMETRY FETCH ---
 @st.cache_data(ttl=3600)
-def fetch_pro_telemetry():
-    # Adding SOL-BTC (Risk On/Off) and VIX (Macro Vol)
-    tickers = {
-        "BTC": "BTC-USD", 
-        "GOLD": "GC=F", 
-        "DXY": "DX-Y.NYB", 
-        "10Y": "^TNX", 
-        "OIL": "CL=F",
-        "SOL_BTC": "SOL-BTC", # The "Risk Appetite" Pulse
-        "VIX": "^VIX"         # The "Volatility Floor"
-    }
+def fetch_telemetry():
+    tickers = {"BTC": "BTC-USD", "GOLD": "GC=F", "DXY": "DX-Y.NYB", "10Y": "^TNX", "OIL": "CL=F", "SOL_BTC": "SOL-BTC", "VIX": "^VIX"}
     data = {}
     for key, symbol in tickers.items():
         try:
@@ -80,16 +70,14 @@ def fetch_pro_telemetry():
             mom = ((curr - h['Close'].iloc[-22]) / h['Close'].iloc[-22]) * 100
             data[key] = (curr, mom)
         except: data[key] = (0.0, 0.0)
-    
-    # Static Indices for Jan 2026
     data["M2"] = (98352.0, 0.17)
     data["ALT_SEASON"] = (17, -5.5)
     data["BBI"] = "UNDERVALUED PHASE"
     return data
 
-tel = fetch_pro_telemetry()
+tel = fetch_telemetry()
 
-# --- 5. GAUGE ENGINE ---
+# --- 4. GAUGE ENGINE ---
 def create_gauge(value, title, is_master=False, is_failed=False):
     _, color = get_risk_meta(value)
     bg = "#ffffff" if is_failed else "#1a1a1a"
@@ -108,14 +96,14 @@ def create_gauge(value, title, is_master=False, is_failed=False):
                            font=dict(size=28, color=strategy_color, family="Courier New"),
                            bgcolor="rgba(0,0,0,0.9)", bordercolor=strategy_color, borderwidth=2, borderpad=10)
     fig.update_layout(title={'text': title, 'y': 0.9, 'x': 0.5, 'font': {'size': 18, 'color': '#00ffcc'}},
-                      paper_bgcolor='rgba(0,0,0,0)', font={'family': "Courier New"}, margin=dict(l=30, r=30, t=50, b=30), height=550 if is_master else 260)
+                      paper_bgcolor='rgba(0,0,0,0)', font={'family': "Courier New"}, margin=dict(l=30, r=30, t=50, b=30), height=500 if is_master else 260)
     return fig
 
-# --- 6. UI LAYOUT ---
+# --- 5. UI LAYOUT ---
 st.write("### MELT INDEX: PROFESSIONAL MACRO TERMINAL")
 st.divider()
 
-# High-Density Telemetry Bar
+# Telemetry Header
 t_cols = st.columns(9)
 def r_met(col, label, val, mom, pref="$", suff="", is_txt=False, is_ratio=False):
     if is_txt:
@@ -137,17 +125,28 @@ r_met(t_cols[8], "BBI", tel["BBI"], 0, is_txt=True)
 
 st.divider()
 
-# Master Dial
+# Master Index Section
 st.plotly_chart(create_gauge(final_index, "", True), use_container_width=True)
+st.markdown(f"<div class='master-schematic'>ALGORITHM: Σ (M * 0.4) + (E * 0.2) + (L * 0.2) + (T * 0.2)</div>", unsafe_allow_html=True)
 
-# Pillar Gauges
+# Pillar Section
 p_cols = st.columns(4)
-with p_cols[0]: st.plotly_chart(create_gauge(M_VAL, "MACRO (M)"), use_container_width=True)
-with p_cols[1]: st.plotly_chart(create_gauge(E_VAL, "EMOTION (E)"), use_container_width=True)
-with p_cols[2]: st.plotly_chart(create_gauge(L_VAL, "LEVERAGE (L)"), use_container_width=True)
-with p_cols[3]: 
+with p_cols[0]:
+    st.plotly_chart(create_gauge(M_VAL, "MACRO (M)"), use_container_width=True)
+    st.markdown("""<div class='schematic-text'><b>INGREDIENTS:</b><br>• Global M2 (Z-Score)<br>• Net Liquidity (Z-Score)<br>• DXY Acceleration<br>• Central Bank Hike Ratio<br><br><b>LOGIC:</b> Compiles liquidity acceleration. High M2/Liquidity reduces risk.</div>""", unsafe_allow_html=True)
+
+with p_cols[1]:
+    st.plotly_chart(create_gauge(E_VAL, "EMOTION (E)"), use_container_width=True)
+    st.markdown("""<div class='schematic-text'><b>INGREDIENTS:</b><br>• Crypto Fear & Greed<br>• Social Sentiment Agg.<br>• Retail Search Trends<br><br><b>LOGIC:</b> Measures crowd psychology. Scores > 80 indicate 'Extreme Greed' (Correction Risk).</div>""", unsafe_allow_html=True)
+
+with p_cols[2]:
+    st.plotly_chart(create_gauge(L_VAL, "LEVERAGE (L)"), use_container_width=True)
+    st.markdown("""<div class='schematic-text'><b>INGREDIENTS:</b><br>• CDRI Derivatives Index<br>• Funding Rates<br>• Open Interest vs MCap<br><br><b>LOGIC:</b> Tracks market 'Fragility'. High leverage increases liquidation cascade probability.</div>""", unsafe_allow_html=True)
+
+with p_cols[3]:
     st.plotly_chart(create_gauge(T_VAL, "TECHNICALS (T)", is_failed=(T_VAL==50)), use_container_width=True)
+    st.markdown("""<div class='schematic-text'><b>INGREDIENTS:</b><br>• CBBI Index<br>• Pi Cycle Top Indicator<br>• RUPL/NUPL Ratio<br><br><b>LOGIC:</b> Evaluates on-chain 'Overheat' levels. Compares current price to historical cycle peaks.</div>""", unsafe_allow_html=True)
     if T_VAL == 50: st.markdown("<p class='sensor-failure'>⚠️ SENSOR FAILURE: OFFLINE</p>", unsafe_allow_html=True)
 
 st.divider()
-st.caption("REACTOR STATUS: STABLE // GLOBAL LIQUIDITY IMPULSE DETECTED // CROSS-ASSET CORRELATION: POSITIVE")
+st.caption("REACTOR STATUS: STABLE // GLOBAL LIQUIDITY IMPULSE DETECTED // SYSTEM AUTH: 2026-REACTOR-1")
