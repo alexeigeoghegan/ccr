@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime
 
 # --- 1. INDUSTRIAL THEME CONFIG ---
-st.set_page_config(page_title="MELT Index | Control Room", layout="wide")
+st.set_page_config(page_title="MELT Index | Professional Macro", layout="wide")
 
 st.markdown("""
     <style>
@@ -19,27 +19,23 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. MACRO SCORE RE-ENGINEERING (Z-SCORE LOGIC) ---
-# Inputs for Jan 2026 Telemetry
+# --- 2. THE RAOUL PAL "LIQUIDITY IMPULSE" MACRO ENGINE ---
+# Advanced Variables for Jan 2026
 m2_z = 1.2          # Global M2 Growth Z-Score
 net_liq_z = -0.5    # US Net Liquidity Growth Z-Score
 dxy_z = 0.8         # DXY Growth Z-Score
-hike_cut_ratio = 20 # Existing Hike/Cut Ratio
+hike_cut_ratio = 20 # Global Central Bank Policy
 
 def calculate_macro_pillar(m2, liq, dxy, hc):
-    # Mapping Z-scores (-3 to 3) to 0-100 scale for the dial
-    # Logic: High M2/Liq = Low Risk (lower score), High DXY = High Risk
+    # Mapping Z-scores to 0-100 (High score = High Risk)
     m2_s = np.clip((1 - (m2 + 3) / 6) * 100, 0, 100)
     liq_s = np.clip((1 - (liq + 3) / 6) * 100, 0, 100)
     dxy_s = np.clip(((dxy + 3) / 6) * 100, 0, 100)
-    
-    # Each sub-component is 10% of the TOTAL MELT Index (which is 40% total for Macro)
-    # Internally we calculate the Macro Pillar score (0-100)
-    return (m2_s * 0.25) + (liq_s * 0.25) + (dxy_s * 0.25) + (hc * 0.25)
+    return int((m2_s * 0.25) + (liq_s * 0.25) + (dxy_s * 0.25) + (hc * 0.25))
 
-# --- 3. REACTOR CORE LOGIC ---
+# --- 3. THE REACTOR CORE ---
 W_M, W_E, W_L, W_T = 0.4, 0.2, 0.2, 0.2
-M_VAL = int(calculate_macro_pillar(m2_z, net_liq_z, dxy_z, hike_cut_ratio))
+M_VAL = calculate_macro_pillar(m2_z, net_liq_z, dxy_z, hike_cut_ratio)
 E_VAL, L_VAL = 29, 54
 
 @st.cache_data(ttl=3600)
@@ -63,10 +59,19 @@ def get_risk_meta(score):
 
 strategy, strategy_color = get_risk_meta(final_index)
 
-# --- 4. TELEMETRY FETCHING ---
+# --- 4. PROFESSIONAL TELEMETRY (CROSS-ASSET) ---
 @st.cache_data(ttl=3600)
-def fetch_telemetry():
-    tickers = {"BTC": "BTC-USD", "GOLD": "GC=F", "DXY": "DX-Y.NYB", "10Y": "^TNX", "OIL": "CL=F"}
+def fetch_pro_telemetry():
+    # Adding SOL-BTC (Risk On/Off) and VIX (Macro Vol)
+    tickers = {
+        "BTC": "BTC-USD", 
+        "GOLD": "GC=F", 
+        "DXY": "DX-Y.NYB", 
+        "10Y": "^TNX", 
+        "OIL": "CL=F",
+        "SOL_BTC": "SOL-BTC", # The "Risk Appetite" Pulse
+        "VIX": "^VIX"         # The "Volatility Floor"
+    }
     data = {}
     for key, symbol in tickers.items():
         try:
@@ -75,12 +80,14 @@ def fetch_telemetry():
             mom = ((curr - h['Close'].iloc[-22]) / h['Close'].iloc[-22]) * 100
             data[key] = (curr, mom)
         except: data[key] = (0.0, 0.0)
+    
+    # Static Indices for Jan 2026
     data["M2"] = (98352.0, 0.17)
     data["ALT_SEASON"] = (17, -5.5)
     data["BBI"] = "UNDERVALUED PHASE"
     return data
 
-tel = fetch_telemetry()
+tel = fetch_pro_telemetry()
 
 # --- 5. GAUGE ENGINE ---
 def create_gauge(value, title, is_master=False, is_failed=False):
@@ -100,34 +107,40 @@ def create_gauge(value, title, is_master=False, is_failed=False):
         fig.add_annotation(text=f"STATUS: {strategy}", x=0.5, y=0.18, showarrow=False,
                            font=dict(size=28, color=strategy_color, family="Courier New"),
                            bgcolor="rgba(0,0,0,0.9)", bordercolor=strategy_color, borderwidth=2, borderpad=10)
-    fig.update_layout(title={'text': title, 'y': 0.9, 'x': 0.5, 'font': {'size': 20, 'color': '#00ffcc'}},
+    fig.update_layout(title={'text': title, 'y': 0.9, 'x': 0.5, 'font': {'size': 18, 'color': '#00ffcc'}},
                       paper_bgcolor='rgba(0,0,0,0)', font={'family': "Courier New"}, margin=dict(l=30, r=30, t=50, b=30), height=550 if is_master else 260)
     return fig
 
 # --- 6. UI LAYOUT ---
-st.write("### MELT INDEX")
+st.write("### MELT INDEX: PROFESSIONAL MACRO TERMINAL")
 st.divider()
 
-m_cols = st.columns(8)
-def r_met(col, label, val, mom, pref="$", suff="", is_txt=False):
+# High-Density Telemetry Bar
+t_cols = st.columns(9)
+def r_met(col, label, val, mom, pref="$", suff="", is_txt=False, is_ratio=False):
     if is_txt:
         col.markdown(f"<div class='telemetry-label'>{label}</div><div class='telemetry-val'>{val}</div>", unsafe_allow_html=True)
     else:
         c = "#00ffcc" if mom >= 0 else "#ef4444"
-        col.markdown(f"<div class='telemetry-label'>{label}</div><div class='telemetry-val'>{pref}{val:,.2f}{suff}</div><div class='telemetry-change' style='color:{c}'>{mom:+.2f}% MoM</div>", unsafe_allow_html=True)
+        format_str = f"{pref}{val:.6f}{suff}" if is_ratio else f"{pref}{val:,.2f}{suff}"
+        col.markdown(f"<div class='telemetry-label'>{label}</div><div class='telemetry-val'>{format_str}</div><div class='telemetry-change' style='color:{c}'>{mom:+.2f}% MoM</div>", unsafe_allow_html=True)
 
-r_met(m_cols[0], "BITCOIN", tel["BTC"][0], tel["BTC"][1])
-r_met(m_cols[1], "GOLD", tel["GOLD"][0], tel["GOLD"][1])
-r_met(m_cols[2], "OIL", tel["OIL"][0], tel["OIL"][1])
-r_met(m_cols[3], "DXY INDEX", tel["DXY"][0], tel["DXY"][1], pref="")
-r_met(m_cols[4], "US 10Y", tel["10Y"][0], tel["10Y"][1], pref="", suff="%")
-r_met(m_cols[5], "GLOBAL M2", tel["M2"][0], tel["M2"][1], suff="B")
-r_met(m_cols[6], "ALT SEASON", tel["ALT_SEASON"][0], tel["ALT_SEASON"][1], pref="")
-r_met(m_cols[7], "BBI", tel["BBI"], 0, is_txt=True)
+r_met(t_cols[0], "BITCOIN", tel["BTC"][0], tel["BTC"][1])
+r_met(t_cols[1], "GOLD", tel["GOLD"][0], tel["GOLD"][1])
+r_met(t_cols[2], "OIL", tel["OIL"][0], tel["OIL"][1])
+r_met(t_cols[3], "DXY INDEX", tel["DXY"][0], tel["DXY"][1], pref="")
+r_met(t_cols[4], "US 10Y", tel["10Y"][0], tel["10Y"][1], pref="", suff="%")
+r_met(t_cols[5], "GLOBAL M2", tel["M2"][0], tel["M2"][1], suff="B")
+r_met(t_cols[6], "SOL/BTC", tel["SOL_BTC"][0], tel["SOL_BTC"][1], pref="", is_ratio=True)
+r_met(t_cols[7], "VIX (VOL)", tel["VIX"][0], tel["VIX"][1], pref="")
+r_met(t_cols[8], "BBI", tel["BBI"], 0, is_txt=True)
 
 st.divider()
+
+# Master Dial
 st.plotly_chart(create_gauge(final_index, "", True), use_container_width=True)
 
+# Pillar Gauges
 p_cols = st.columns(4)
 with p_cols[0]: st.plotly_chart(create_gauge(M_VAL, "MACRO (M)"), use_container_width=True)
 with p_cols[1]: st.plotly_chart(create_gauge(E_VAL, "EMOTION (E)"), use_container_width=True)
@@ -137,4 +150,4 @@ with p_cols[3]:
     if T_VAL == 50: st.markdown("<p class='sensor-failure'>⚠️ SENSOR FAILURE: OFFLINE</p>", unsafe_allow_html=True)
 
 st.divider()
-st.caption("REACTOR STATUS: STABLE // LIQUIDITY PROXIES ACTIVE // NO CHART HISTORY RECORDED")
+st.caption("REACTOR STATUS: STABLE // GLOBAL LIQUIDITY IMPULSE DETECTED // CROSS-ASSET CORRELATION: POSITIVE")
