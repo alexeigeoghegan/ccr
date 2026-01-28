@@ -1,120 +1,111 @@
 import streamlit as st
-import yfinance as yf
-import requests
 import pandas as pd
-from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
 
-# --- Page Config ---
+# 1. Page Configuration & Custom Styling
 st.set_page_config(page_title="FLEET Index", layout="wide")
-st.title("🚢 FLEET Index Dashboard")
+
+st.markdown("""
+    <style>
+    .main {
+        background-color: #001f3f; /* Navy Background */
+        color: #ffffff;
+    }
+    .stMetric {
+        background-color: #002d5a;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #007bff;
+    }
+    h1, h2, h3 {
+        color: #ffffff !important;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #ffffff;
+    }
+    .index-card {
+        text-align: center;
+        padding: 30px;
+        background-color: #003366;
+        border-radius: 15px;
+        margin-bottom: 25px;
+        border: 2px solid #007bff;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 2. Data Initialization (As of Jan 28, 2026)
+data = {
+    "DXY": {"val": 96.04, "change": -1.45, "weight": 20},
+    "WTI_OIL": {"val": 62.14, "change": 2.10, "weight": 10},
+    "10Y_Y": {"val": 4.22, "change": 0.07, "weight": 10},
+    "GM2": {"val": 99036, "change": 1.50, "weight": 20},
+    "FED_LIQ": {"val": 5713, "change": -5.4, "weight": 10},
+    "MOVE": {"val": 55.77, "change": -10.2, "weight": 10},
+    "CDRI": 55,
+    "F&G": 37,
+    "CBBI": 50
+}
+
+# 3. Scoring Logic
+def get_score(key, d):
+    # Financial/Liquidity scoring based on requirements
+    if key == "DXY":
+        return 20 if d["change"] < 0 else -20
+    if key in ["WTI_OIL", "10Y_Y"]:
+        return 10 if d["change"] < 0 else -10
+    if key == "GM2":
+        return -20 if d["change"] > 0 else 20
+    if key == "FED_LIQ":
+        return 10 if d["change"] < 0 else -10
+    if key == "MOVE":
+        return 10 if d["change"] > 0 else -10
+    return 0
+
+scores = {
+    "Financials": get_score("DXY", data["DXY"]) + get_score("WTI_OIL", data["WTI_OIL"]) + get_score("10Y_Y", data["10Y_Y"]),
+    "Liquidity": get_score("GM2", data["GM2"]) + get_score("FED_LIQ", data["FED_LIQ"]) + get_score("MOVE", data["MOVE"]),
+    "Exposure": data["CDRI"],
+    "Emotion": data["F&G"],
+    "Technicals": data["CBBI"]
+}
+
+total_index = sum(scores.values())
+
+# 4. Header & Total Index Display
+st.title("🚢 FLEET Index")
 st.markdown("---")
 
-# --- Helper Functions ---
+col_idx1, col_idx2, col_idx3 = st.columns([1, 2, 1])
+with col_idx2:
+    st.markdown(f"""
+    <div class="index-card">
+        <h3>CURRENT FLEET INDEX SCORE</h3>
+        <h1 style="font-size: 72px; margin: 0;">{total_index}</h1>
+        <p>Market Sentiment: {"Risk-Off" if total_index < 100 else "Risk-On"}</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-def get_yf_data(ticker):
-    try:
-        data = yf.download(ticker, period="1mo", interval="1d", progress=False)
-        if data.empty: return 50, 0
-        current = data['Close'].iloc[-1]
-        prev = data['Close'].iloc[0]
-        change = ((current - prev) / prev) * 100
-        return float(current), float(change)
-    except:
-        return 50.0, 0.0
+# 5. Dashboard Grid
+# Financial Conditions
+st.subheader("📊 Financial Conditions")
+c1, c2, c3 = st.columns(3)
+c1.metric("DXY Index", f"{data['DXY']['val']}", f"{data['DXY']['change']}% (1m)")
+c2.metric("WTI Crude Oil", f"${data['WTI_OIL']['val']}", f"{data['WTI_OIL']['change']}% (1m)")
+c3.metric("10Y Treasury Yield", f"{data['10Y_Y']['val']}%", f"{data['10Y_Y']['change']}% (1m)")
 
-def fetch_cmc_fear_greed():
-    try:
-        url = "https://api.coinmarketcap.com/data-api/v3/fear-greed/latest"
-        response = requests.get(url, timeout=5).json()
-        return int(response['data']['value'])
-    except:
-        return 50
+# Liquidity Conditions
+st.subheader("💧 Liquidity Conditions")
+l1, l2, l3 = st.columns(3)
+l1.metric("Global M2 (USD-D)", f"${data['GM2']['val']}B", f"{data['GM2']['change']}% (1m)")
+l2.metric("Fed Net Liquidity", f"${data['FED_LIQ']['val']}B", f"{data['FED_LIQ']['change']}% (1m)")
+l3.metric("MOVE Index", f"{data['MOVE']['val']}", f"{data['MOVE']['change']}% (1m)")
 
-def fetch_cbbi():
-    try:
-        # ColinTalksCrypto official JSON endpoint
-        url = "https://colintalkscrypto.com/cbbi/data/latest.json"
-        response = requests.get(url, timeout=5).json()
-        # The JSON usually contains a dictionary of timestamp: value
-        latest_ts = max(response.keys())
-        return int(response[latest_ts] * 100)
-    except:
-        return 50
-
-def fetch_streetstats(url):
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        # Simple extraction logic: looking for common numeric patterns in StreetStats headers
-        # Note: Actual scraping depends on their exact DOM which changes. 
-        # For this demo, we'll simulate the scrape or return 50 if blocked.
-        return 50.0, 0.0 
-    except:
-        return 50.0, 0.0
-
-def fetch_coinglass_cdri():
-    try:
-        # Coinglass often requires API keys, but we check their public frontend data
-        url = "https://www.coinglass.com/api/index/cdri"
-        res = requests.get(url, timeout=5).json()
-        return int(res['data'][-1]['value'])
-    except:
-        return 50
-
-# --- Data Fetching ---
-
-with st.spinner('Gathering market intelligence...'):
-    # Fincon
-    dxy_val, dxy_chg = get_yf_data("DX-Y.NYB")
-    wti_val, wti_chg = get_yf_data("CL=F")
-    tnx_val, tnx_chg = get_yf_data("^TNX")
-
-    # Liquidity
-    m2_val, m2_chg = fetch_streetstats("https://streetstats.finance/liquidity/money")
-    fed_val, fed_chg = fetch_streetstats("https://streetstats.finance/liquidity/fed-balance-sheet")
-    move_val, move_chg = get_yf_data("^MOVE")
-
-    # Exposure & Emotion & Technicals
-    cdri = fetch_coinglass_cdri()
-    fng = fetch_cmc_fear_greed()
-    cbbi = fetch_cbbi()
-
-# --- Dashboard Layout ---
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("🏛️ Fincon (Financial Conditions)")
-    k1, k2, k3 = st.columns(3)
-    k1.metric("DXY (Dollar Index)", f"{dxy_val:.2f}", f"{dxy_chg:.2f}%")
-    k2.metric("WTI Oil", f"${wti_val:.2f}", f"{wti_chg:.2f}%")
-    k3.metric("10Y Treasury", f"{tnx_val:.2f}%", f"{tnx_chg:.2f}%")
-
-    st.subheader("💧 Liquidity")
-    l1, l2, l3 = st.columns(3)
-    l1.metric("Global M2", f"{m2_val}", f"{m2_chg}%")
-    l2.metric("Fed Net Liq", f"{fed_val}", f"{fed_chg}%")
-    l3.metric("MOVE Index", f"{move_val:.2f}", f"{move_chg:.2f}%")
-
-with col2:
-    st.subheader("⚖️ Risk & Sentiment")
-    
-    # Exposure
-    st.write("**Exposure (CDRI)**")
-    st.progress(cdri / 100)
-    st.info(f"Derivatives Risk Index: {cdri}")
-
-    # Emotion
-    st.write("**Emotion (Fear & Greed)**")
-    st.progress(fng / 100)
-    st.warning(f"Market Sentiment: {fng}")
-
-    # Technicals
-    st.write("**Technicals (CBBI)**")
-    st.progress(cbbi / 100)
-    st.success(f"Bitcoin Bull Run Index: {cbbi}")
+# Sentiment & Technicals
+st.subheader("🧠 Exposure, Emotion & Technicals")
+e1, e2, e3 = st.columns(3)
+e1.metric("CDRI (Exposure)", f"{data['CDRI']}")
+e2.metric("Fear & Greed", f"{data['F&G']}")
+e3.metric("CBBI (Technicals)", f"{data['CBBI']}", "Default: 50")
 
 st.markdown("---")
-st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} CET")
+st.caption("Data sources: Coinglass, CoinMarketCap, ColinTalksCrypto, StreetStats (Manual Feed)")
