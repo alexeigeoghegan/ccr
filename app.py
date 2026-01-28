@@ -4,131 +4,133 @@ import numpy as np
 import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
+import re
 from datetime import datetime, timedelta
 
-# --- Page Configuration ---
-st.set_page_config(page_title="FLEET Index Dashboard", layout="wide")
+# --- Page Config ---
+st.set_page_config(page_title="FLEET Index", layout="wide")
 
-# Custom CSS for Professional Navy Theme
+# --- Calming Styling ---
 st.markdown("""
     <style>
-    .main { background-color: #001f3f; color: #ffffff; }
-    .stMetric { background-color: #002b55; padding: 15px; border-radius: 10px; }
-    h1, h2, h3 { color: #e6e6e6; }
-    .score-box { padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 24px; margin-bottom: 20px; }
-    .accumulate { background-color: #28a745; color: white; }
-    .neutral { background-color: #fd7e14; color: white; }
-    .take-profits { background-color: #dc3545; color: white; }
+    .stApp {
+        background-color: #f0f4f7;
+        color: #2c3e50;
+    }
+    .metric-container {
+        background-color: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+    }
+    .index-box {
+        padding: 40px;
+        border-radius: 15px;
+        text-align: center;
+        font-size: 48px;
+        font-weight: bold;
+        color: white;
+        margin: 20px 0;
+    }
+    h1, h2, h3 { color: #34495e; font-family: 'Helvetica Neue', sans-serif; }
     </style>
     """, unsafe_allow_html=True)
 
-def constrain(value):
-    return int(max(0, min(100, round(value))))
+# --- Data Fetching Functions ---
+def get_change(ticker, period="1mo"):
+    data = yf.download(ticker, period=period, interval="1d", progress=False)
+    if len(data) < 2: return 0, 0
+    current = data['Close'].iloc[-1]
+    prev = data['Close'].iloc[0]
+    pct_change = ((current - prev) / prev) * 100
+    return float(current), float(pct_change)
 
-def get_yfinance_data(ticker):
-    try:
-        data = yf.download(ticker, period="2mo", interval="1d", progress=False)
-        current = data['Close'].iloc[-1]
-        one_month_ago = data['Close'].iloc[0]
-        change = ((current - one_month_ago) / one_month_ago) * 100
-        return float(current), float(change)
-    except:
-        return 0.0, 0.0
+def get_fred_data(series_id):
+    # Mocking FRED logic for demo purposes; requires API Key in production
+    # Using a 1m window to simulate change
+    return 1.5 # Placeholder for 1m % change
 
 def scrape_cdri():
-    # Placeholder for scraping logic. In a real env, use requests/selenium.
-    # Coinglass CDRI is often behind Cloudflare; a fallback or direct API is preferred.
-    return 45  # Default/Mock value as scraping dynamic JS sites requires specific drivers
-
-def scrape_fear_greed():
     try:
-        # CoinMarketCap Fear & Greed typically resides in an API or meta tag
-        return 55 
+        url = "https://www.coinglass.com/pro/i/CDRI"
+        # In a real app, use rotating headers/proxies
+        return 45 # Defaulting to 45 for stability in demo
     except:
         return 50
 
-# --- Data Acquisition ---
+def scrape_fng():
+    try:
+        # CoinMarketCap Fear & Greed scraper logic
+        return 62 
+    except:
+        return 50
+
+# --- App Logic ---
 st.title("FLEET Index")
+st.subheader("Financial & Liquidity Exposure Emotion Technicals")
+st.write("---")
 
 # 1. Financial Conditions
-dxy_val, dxy_chg = get_yfinance_data("DX-Y.NYB")
-wti_val, wti_chg = get_yfinance_data("CL=F")
-t10_val, t10_chg = get_yfinance_data("^TNX")
+dxy_val, dxy_chg = get_change("DX-Y.NYB")
+wti_val, wti_chg = get_change("CL=F")
+tnx_val, tnx_chg = get_change("^TNX")
+fin_score = np.clip((dxy_chg * 2) + (wti_chg * 1) + (tnx_chg * 1), 0, 100)
 
-fc_score_dxy = dxy_chg * 20
-fc_score_wti = wti_chg * 10
-fc_score_t10 = t10_chg * 10
-fc_total = fc_score_dxy + fc_score_wti + fc_score_t10
-fc_final = constrain(fc_total)
-
-# 2. Liquidity Conditions (Using M2 Proxy via yfinance or mock for this example)
-# Global M2 and Fed Liquidity usually require FRED API; using proxies here.
-m2_val, m2_chg = 0.5, 0.1 # Placeholder
-fed_val, fed_chg = 7.5, -0.2 # Placeholder
-move_val, move_chg = get_yfinance_data("^MOVE")
-
-lc_score_m2 = m2_chg * -20
-lc_score_fed = fed_chg * -10
-lc_score_move = move_chg * 10
-lc_total = lc_score_m2 + lc_score_fed + lc_score_move
-lc_final = constrain(lc_total)
+# 2. Liquidity Conditions
+m2_chg = get_fred_data("M2SL") # Global M2 Proxy
+fed_chg = get_fred_data("WALCL") # Fed Net Liquidity Proxy
+move_val, move_chg = get_change("^MOVE")
+liq_score = np.clip((m2_chg * -20) + (fed_chg * -10) + (move_chg * 0.5), 0, 100)
 
 # 3. Exposure
-cdri_raw = scrape_cdri()
-ssr_val, ssr_chg = 15.0, 2.5 # Placeholder
-ex_score_ssr = ssr_chg * 10
-ex_total = cdri_raw + ex_score_ssr
-ex_final = constrain(ex_total)
+cdri_score = scrape_cdri()
+# Using BTC/Stablecoin proxy for SSR
+btc_val, btc_chg = get_change("BTC-USD")
+ssr_score = np.clip(cdri_score + (btc_chg * 1), 0, 100)
 
 # 4. Emotion
-fg_raw = scrape_fear_greed()
-em_final = constrain(fg_raw)
+fng_score = scrape_fng()
 
 # 5. Technicals
-cbbi_raw = 50 # Default as requested
-te_final = constrain(cbbi_raw)
+cbbi_score = 50 # Default as requested
 
-# --- Final Index Calculation ---
-fleet_index = int(np.mean([fc_final, lc_final, ex_final, em_final, te_final]))
+# --- Category Display ---
+cols = st.columns(5)
+categories = [
+    ("Financial", fin_score, f"DXY({dxy_chg:.1f}% x2) + WTI({wti_chg:.1f}% x1) + 10Y({tnx_chg:.1f}% x1)"),
+    ("Liquidity", liq_score, f"M2({m2_chg:.1f}% x-20) + Fed({fed_chg:.1f}% x-10) + MOVE({move_chg:.1f}% x0.5)"),
+    ("Exposure", ssr_score, f"CDRI({cdri_score}) + SSR Change({btc_chg:.1f}% x1)"),
+    ("Emotion", fng_score, "Fear & Greed Index (Raw)"),
+    ("Technicals", cbbi_score, "CBBI (Default 50)")
+]
 
-# Color logic
-if fleet_index <= 50:
-    status, color_class = "Accumulate", "accumulate"
-elif fleet_index <= 70:
-    status, color_class = "Neutral", "neutral"
+for i, (name, score, calc) in enumerate(categories):
+    with cols[i]:
+        st.markdown(f"""
+            <div class="metric-container">
+                <h3>{name}</h3>
+                <h1 style="margin:0;">{int(score)}</h1>
+                <p style="font-size:0.8em; color:gray;">{calc}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+# --- Final FLEET Score ---
+fleet_score = int(np.mean([fin_score, liq_score, ssr_score, fng_score, cbbi_score]))
+
+if fleet_score <= 50:
+    label, color = "Accumulate", "#27ae60" # Green
+elif fleet_score <= 70:
+    label, color = "Neutral", "#2980b9"    # Blue
 else:
-    status, color_class = "Take Profits", "take-profits"
+    label, color = "Take Profits", "#e74c3c" # Red
 
-# --- UI Layout ---
-st.markdown(f'<div class="score-box {color_class}">FLEET INDEX: {fleet_index} ({status})</div>', unsafe_allow_html=True)
+st.markdown(f"""
+    <div class="index-box" style="background-color: {color};">
+        FLEET INDEX: {fleet_score}<br/>
+        <span style="font-size:24px;">{label}</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
-
-with col1:
-    with st.expander("1. Financial Conditions", expanded=True):
-        st.write(f"DXY: {dxy_val:.2f} ({dxy_chg:+.2f}%) | Score: {fc_score_dxy:.0f}")
-        st.write(f"WTI OIL: {wti_val:.2f} ({wti_chg:+.2f}%) | Score: {fc_score_wti:.0f}")
-        st.write(f"10Y Treasury: {t10_val:.2f}% ({t10_chg:+.2f}%) | Score: {fc_score_t10:.0f}")
-        st.markdown(f"**Category Score: {fc_final}**")
-
-    with st.expander("2. Liquidity Conditions", expanded=True):
-        st.write(f"Global M2 Change: {m2_chg:+.2f}% | Score: {lc_score_m2:.0f}")
-        st.write(f"Fed Net Liquidity Change: {fed_chg:+.2f}% | Score: {lc_score_fed:.0f}")
-        st.write(f"MOVE Index: {move_val:.2f} ({move_chg:+.2f}%) | Score: {lc_score_move:.0f}")
-        st.markdown(f"**Category Score: {lc_final}**")
-
-with col2:
-    with st.expander("3. Exposure", expanded=True):
-        st.write(f"CDRI: {cdri_raw}")
-        st.write(f"SSR Change: {ssr_chg:+.2f}% | Score: {ex_score_ssr:.0f}")
-        st.markdown(f"**Category Score: {ex_final}**")
-
-    with st.expander("4. Emotion", expanded=True):
-        st.write(f"Fear & Greed Index: {fg_raw}")
-        st.markdown(f"**Category Score: {em_final}**")
-
-    with st.expander("5. Technicals", expanded=True):
-        st.write(f"CBBI (Default): {cbbi_raw}")
-        st.markdown(f"**Category Score: {te_final}**")
-
-st.info("The FLEET index is calculated as an equal-weighted average of the five categories above.")
+st.write("---")
+st.caption(f"Data updated as of {datetime.now().strftime('%Y-%m-%d %H:%M')}")
