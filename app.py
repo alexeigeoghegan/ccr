@@ -3,18 +3,18 @@ import streamlit as st
 # 1. Page Configuration & Custom Styling
 st.set_page_config(page_title="FLEET Index", layout="wide")
 
-# 2. Market Data & Logic (As of Jan 28, 2026)
+# 2. Market Data (Reflecting Jan 28, 2026 Closing Levels)
 data = {
-    "DXY": {"chg": -1.72},    # -1.72% 
-    "WTI": {"chg": 8.22},     # +8.22%
-    "10Y": {"chg": 0.17},     # +0.17%
-    "GM2": {"chg": 1.50},     # +1.50%
-    "FED": {"chg": -5.41},    # -5.41%
-    "MOVE": {"chg": -3.61},   # -3.61%
-    "CDRI": 56,               
-    "SSR": {"chg": -4.2},     
-    "F&G": 29,                
-    "CBBI": 50                
+    "DXY": {"val": 95.96, "chg": -1.45},    # DXY hits 4-year low
+    "WTI": {"val": 63.13, "chg": 9.94},     # Oil jumps amid storm concerns
+    "10Y": {"val": 4.22, "chg": 1.93},      # Yields steady after Fed hold
+    "GM2": {"val": 99036, "chg": 1.50},     # Global M2 remains elevated
+    "FED": {"val": 5713, "chg": -5.41},     # Tighter funding conditions
+    "MOVE": {"val": 55.77, "chg": -3.61},   # Bond volatility dips
+    "CDRI": 56,                             # Derivatives Risk Index
+    "SSR": {"val": 6.1, "chg": -4.2},       # SSR Change is negative
+    "F&G": 29,                              # Fear & Greed (Fear zone)
+    "CBBI": 50                              # Technicals Default
 }
 
 # --- Scoring Helper Functions ---
@@ -23,30 +23,23 @@ def clamp(n):
 
 def get_color(score):
     if score < 50: return "#28a745"   # Green (Accumulate)
-    if score <= 70: return "#fd7e14"  # Orange (Neutral)
+    if score <= 70: return "#007bff"  # Blue (Neutral) - UPDATED
     return "#dc3545"                 # Red (Take Profits)
 
 # --- Calculation: Financials (Base 50) ---
-dxy_comp = data["DXY"]["chg"] * 10
-oil_comp = data["WTI"]["chg"] * 1
-y10_comp = data["10Y"]["chg"] * 1
-fin_total = clamp(50 + (dxy_comp + oil_comp + y10_comp))
+fin_total = clamp(50 + (data["DXY"]["chg"] * 10 + data["WTI"]["chg"] * 1 + data["10Y"]["chg"] * 1))
 
 # --- Calculation: Liquidity (Base 50) ---
-gm2_comp = data["GM2"]["chg"] * -20
-fed_comp = data["FED"]["chg"] * -10
-mov_comp = data["MOVE"]["chg"] * 2
-liq_total = clamp(50 + (gm2_comp + fed_comp + mov_comp))
+liq_total = clamp(50 + (data["GM2"]["chg"] * -20 + data["FED"]["chg"] * -10 + data["MOVE"]["chg"] * 2))
 
 # --- Calculation: Exposure ---
-# SSR Logic: -10 if pos change, +10 if neg change
-ssr_comp = 10 if data["SSR"]["chg"] < 0 else -10
-exp_total = clamp(data["CDRI"] + ssr_comp)
+ssr_s = 10 if data["SSR"]["chg"] < 0 else -10
+exp_total = clamp(data["CDRI"] + ssr_s)
 
-# --- Total Index (Average) ---
+# --- Total Index (Average of 5) ---
 total_score = round((fin_total + liq_total + exp_total + data["F&G"] + data["CBBI"]) / 5)
 
-# 3. Custom CSS for Navy Theme
+# 3. Custom CSS
 st.markdown(f"""
     <style>
     .main {{ background-color: #001f3f; color: #ffffff; }}
@@ -82,20 +75,20 @@ col_d1, col_d2, col_d3 = st.columns([1, 2.5, 1])
 with col_d2:
     # Financials
     st.markdown(f'<div class="driver-line" style="color:{get_color(fin_total)};"><span>Financial conditions</span> <span>{fin_total}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>DXY (1m % x 10)</span> <span>{round(dxy_comp)}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>OIL (1m % x 1)</span> <span>{round(oil_comp)}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>10Y Treasury (1m % x 1)</span> <span>{round(y10_comp)}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>DXY Index</span> <span>{data["DXY"]["val"]} ({data["DXY"]["chg"]}%)</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>WTI Oil</span> <span>${data["WTI"]["val"]} (+{data["WTI"]["chg"]}%)</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>10Y Treasury</span> <span>{data["10Y"]["val"]}% (+{data["10Y"]["chg"]}%)</span></div>', unsafe_allow_html=True)
 
     # Liquidity
     st.markdown(f'<div class="driver-line" style="margin-top:25px; color:{get_color(liq_total)};"><span>Liquidity conditions</span> <span>{liq_total}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>Global M2 (1m % x -20)</span> <span>{round(gm2_comp)}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>Fed Net Liquidity (1m % x -10)</span> <span>{round(fed_comp)}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>Move Index (1m % x 2)</span> <span>{round(mov_comp)}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Global M2 (USD-D)</span> <span>${data["GM2"]["val"]}B (+{data["GM2"]["chg"]}%)</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Fed Net Liquidity</span> <span>${data["FED"]["val"]}B ({data["FED"]["chg"]}%)</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Move Index</span> <span>{data["MOVE"]["val"]} ({data["MOVE"]["chg"]}%)</span></div>', unsafe_allow_html=True)
 
     # Exposure
     st.markdown(f'<div class="driver-line" style="margin-top:25px; color:{get_color(exp_total)};"><span>Exposure</span> <span>{exp_total}</span></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="sub-line"><span>Derivatives Risk Index (CDRI)</span> <span>{data["CDRI"]}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>SSR Momentum Adjustment</span> <span>{ssr_comp}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Stablecoin Supply Ratio (SSR)</span> <span>{data["SSR"]["val"]} ({data["SSR"]["chg"]}%)</span></div>', unsafe_allow_html=True)
 
     # Emotion
     st.markdown(f'<div class="driver-line" style="margin-top:25px; color:{get_color(data["F&G"])};"><span>Emotion</span> <span>{data["F&G"]}</span></div>', unsafe_allow_html=True)
@@ -106,4 +99,4 @@ with col_d2:
     st.markdown(f'<div class="sub-line"><span>CBBI Composite</span> <span>{data["CBBI"]}</span></div>', unsafe_allow_html=True)
 
 st.markdown("<br><hr>", unsafe_allow_html=True)
-st.caption("Fleet Index Data Feed: Wednesday, 28 January 2026")
+st.caption("Fleet Index Live Reporting: Wednesday, 28 January 2026")
