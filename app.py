@@ -3,41 +3,43 @@ import streamlit as st
 # 1. Page Configuration & Custom Styling
 st.set_page_config(page_title="FLEET Index", layout="wide")
 
-# 2. Market Data & Scoring Logic (January 28, 2026)
+# 2. Market Data & Logic (As of Jan 28, 2026)
+# SSR 1m change is currently negative based on recent BTC market cap contraction
 data = {
-    "DXY": {"val": 96.61, "chg": -1.45},    # Positive for risk: +20
-    "WTI": {"val": 62.14, "chg": 8.22},     # Negative for risk: -10
-    "10Y": {"val": 4.22, "chg": 0.07},      # Negative for risk: -10
+    "DXY": {"val": 95.96, "chg": -1.72},    # Negative change: +20
+    "WTI": {"val": 62.14, "chg": 8.22},     # Positive change: -10
+    "10Y": {"val": 4.23, "chg": 0.17},      # Positive change: -10
     "GM2": {"val": 99036, "chg": 1.50},     # Positive change: -20
     "FED": {"val": 5713, "chg": -5.41},     # Negative change: +10
-    "MOVE": {"val": 55.77, "chg": -5.64},   # Negative change: -10
-    "CDRI": 56,                             # Updated value
-    "SSR": {"val": 6.1, "chg": -4.2},       # SSR Change is negative: -10
-    "F&G": 37,
-    "CBBI": 50
+    "MOVE": {"val": 55.77, "chg": -3.61},   # Negative change: -10
+    "CDRI": 56,                             # Updated raw value
+    "SSR": {"val": 6.1, "chg": -4.2},       # Negative change: +10 (per user logic)
+    "F&G": 29,                              # Updated raw value (Fear zone)
+    "CBBI": 50                              # Default value
 }
 
-# --- Calculation: Financials ---
+# --- Calculation: Financial Conditions (+50) ---
 dxy_s = 20 if data["DXY"]["chg"] < 0 else -20
 wti_s = 10 if data["WTI"]["chg"] < 0 else -10
 y10_s = 10 if data["10Y"]["chg"] < 0 else -10
 fin_total = (dxy_s + wti_s + y10_s) + 50
 
-# --- Calculation: Liquidity ---
+# --- Calculation: Liquidity Conditions (+50) ---
 gm2_s = -20 if data["GM2"]["chg"] > 0 else 20
 fed_s = 10 if data["FED"]["chg"] < 0 else -10
 mov_s = 10 if data["MOVE"]["chg"] > 0 else -10
 liq_total = (gm2_s + fed_s + mov_s) + 50
 
 # --- Calculation: Exposure ---
-ssr_s = 10 if data["SSR"]["chg"] > 0 else -10
+ssr_s = -10 if data["SSR"]["chg"] > 0 else 10
 exp_total = data["CDRI"] + ssr_s
 
-# --- Total Index Average (Rounded to Whole Number) ---
+# --- Total Index (Rounded Whole Number) ---
+# Weights: Fin (20%), Liq (20%), Exp (20%), Emo (20%), Tec (20%)
 total_score = round((fin_total + liq_total + exp_total + data["F&G"] + data["CBBI"]) / 5)
 
-# Strategy & Color Logic
-if total_score < 30:
+# Strategy & Color Logic (Updated Thresholds)
+if total_score < 50:
     strategy, color = "Accumulate", "#28a745"
 elif total_score <= 70:
     strategy, color = "Neutral", "#fd7e14"
@@ -80,20 +82,20 @@ col_d1, col_d2, col_d3 = st.columns([1, 3, 1])
 with col_d2:
     # Financials
     st.markdown(f'<div class="driver-line"><span>Financial conditions</span> <span>{fin_total}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>DXY Level ({data["DXY"]["val"]}) | 1m: {data["DXY"]["chg"]}%</span> <span>{dxy_s}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>WTI Oil (${data["WTI"]["val"]}) | 1m: {data["WTI"]["chg"]}%</span> <span>{wti_s}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>10Y Treasury ({data["10Y"]["val"]}%) | 1m: {data["10Y"]["chg"]}%</span> <span>{y10_s}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>DXY (1m: {data["DXY"]["chg"]}%)</span> <span>{dxy_s}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>WTI Oil (1m: +{data["WTI"]["chg"]}%)</span> <span>{wti_s}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>10Y Treasury (1m: +{data["10Y"]["chg"]}%)</span> <span>{y10_s}</span></div>', unsafe_allow_html=True)
 
     # Liquidity
     st.markdown(f'<div class="driver-line" style="margin-top:20px;"><span>Liquidity conditions</span> <span>{liq_total}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>Global M2 (${data["GM2"]["val"]}B) | 1m: {data["GM2"]["chg"]}%</span> <span>{gm2_s}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>Fed Net Liquidity (${data["FED"]["val"]}B) | 1m: {data["FED"]["chg"]}%</span> <span>{fed_s}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>Move Index ({data["MOVE"]["val"]}) | 1m: {data["MOVE"]["chg"]}%</span> <span>{mov_s}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Global M2 (1m: +{data["GM2"]["chg"]}%)</span> <span>{gm2_s}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Fed Net Liq (1m: {data["FED"]["chg"]}%)</span> <span>{fed_s}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Move Index (1m: {data["MOVE"]["chg"]}%)</span> <span>{mov_s}</span></div>', unsafe_allow_html=True)
 
     # Exposure
     st.markdown(f'<div class="driver-line" style="margin-top:20px;"><span>Exposure</span> <span>{exp_total}</span></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="sub-line"><span>Derivatives Risk Index (CDRI)</span> <span>{data["CDRI"]}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>Stablecoin Supply Ratio (SSR: {data["SSR"]["val"]}) | 1m: {data["SSR"]["chg"]}%</span> <span>{ssr_s}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Stablecoin Supply Ratio (1m: {data["SSR"]["chg"]}%)</span> <span>{ssr_s}</span></div>', unsafe_allow_html=True)
 
     # Emotion
     st.markdown(f'<div class="driver-line" style="margin-top:20px;"><span>Emotion</span> <span>{data["F&G"]}</span></div>', unsafe_allow_html=True)
@@ -104,4 +106,4 @@ with col_d2:
     st.markdown(f'<div class="sub-line"><span>CBBI Index</span> <span>{data["CBBI"]}</span></div>', unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Market Reporting: January 28, 2026")
+st.caption("Updated: January 28, 2026")
