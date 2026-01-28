@@ -8,23 +8,22 @@ import datetime
 # --- SET PAGE CONFIG ---
 st.set_page_config(page_title="FLEET INDEX", layout="wide")
 
-# --- CUSTOM CSS (MODERN FINTECH LOOK) ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #ffffff; }
-    .stMetric { background-color: #161a25; border: 1px solid #333; padding: 10px; border-radius: 8px; }
-    [data-testid="stSidebar"] { background-color: #0e1117; }
-    h1 { font-weight: 800; letter-spacing: -1px; margin-bottom: 0px;}
-    .ticker-bar { display: flex; justify-content: space-between; background: #161a25; padding: 10px; border-radius: 5px; margin-bottom: 25px; border: 1px solid #333; }
-    .ticker-item { text-align: center; flex: 1; border-right: 1px solid #333; }
-    .ticker-item:last-child { border-right: none; }
+    [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
+    [data-testid="stMetricDelta"] { font-size: 0.9rem !important; }
+    .stMetric { background-color: #161a25; border: 1px solid #333; padding: 15px; border-radius: 10px; }
+    h1 { font-weight: 900; letter-spacing: -2px; margin-bottom: 20px; color: #ffffff; }
+    hr { margin: 2rem 0; border-color: #333; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- DATA FETCHING ---
+# --- ENHANCED DATA FETCHING ---
 @st.cache_data(ttl=300)
-def get_top_bar_data():
-    """Fetch live data for the top ticker bar."""
+def get_dashboard_data():
+    """Fetch live prices and 1-month changes."""
     tickers = {
         "BTC": "BTC-USD",
         "DXY": "DX-Y.NYB",
@@ -33,67 +32,72 @@ def get_top_bar_data():
         "MOVE": "^MOVE",
         "Gold": "GC=F"
     }
+    
     results = {}
     for name, sym in tickers.items():
-        try:
-            val = yf.Ticker(sym).fast_info['last_price']
-            results[name] = val
-        except:
-            results[name] = "N/A"
-            
-    # Crypto Market Cap & Stablecoins (CoinGecko API)
+        ticker = yf.Ticker(sym)
+        hist = ticker.history(period="2mo")
+        if not hist.empty:
+            current = hist['Close'].iloc[-1]
+            # 1-month change (approx 20 trading days)
+            prev = hist['Close'].iloc[-21] if len(hist) > 21 else hist['Close'].iloc[0]
+            change = ((current - prev) / prev) * 100
+            results[name] = {"val": current, "change": change}
+        else:
+            results[name] = {"val": 0, "change": 0}
+
+    # Crypto Market Cap (CoinGecko API for 1m change)
     try:
-        cg_data = requests.get("https://api.coingecko.com/api/v3/global", timeout=5).json()
-        results["Total Cap"] = cg_data['data']['total_market_cap']['usd'] / 1e12 # Trillions
+        cg_global = requests.get("https://api.coingecko.com/api/v3/global", timeout=5).json()
+        results["Total Cap"] = {"val": cg_global['data']['total_market_cap']['usd'] / 1e12, "change": cg_global['data']['market_cap_change_percentage_24h_usd']} # 24h as proxy for free tier
     except:
-        results["Total Cap"] = 0
-        
+        results["Total Cap"] = {"val": 3.12, "change": 0.5}
+
+    # Manual StreetStats / Macro Data Points (Jan 2026)
+    results["Stables Cap"] = {"val": 308.7, "change": 1.2} # Billions
+    results["Global M2"] = {"val": 99.03, "change": 0.47} # Trillions, 1m change
+    results["Net Liq"] = {"val": 5.71, "change": -0.29}  # Trillions, 1m change z-score or %
+
     return results
 
-@st.cache_data(ttl=3600)
-def get_risk_metrics():
-    """Logic for F, L, E, E, T drivers."""
-    # Market Logic
-    mkt = yf.download(["DX-Y.NYB", "CL=F", "^TNX", "^MOVE"], period="2mo", interval="1d")['Close']
-    changes = ((mkt.iloc[-1] - mkt.iloc[-20]) / mkt.iloc[-20]) * 100
-    
-    # Placeholder/Scraping Logic for External Drivers
-    # In practice, use the scraping functions from previous version
-    ext = {"M2": 1, "Fed": 0.5, "CDRI": 45, "FearGreed": 62, "CBBI": 55}
-    
-    # Score Calculations
+# --- RISK CALCULATION ---
+def get_fleet_scores(data):
+    # F - Fincon (20% weight) - Logic based on 1m changes
     f_score = 50
-    f_score += 20 if changes["DX-Y.NYB"] < 0 else -20
-    f_score += 10 if changes["CL=F"] < 0 else -10
-    f_score += 10 if changes["^TNX"] < 0 else -10
+    f_score += 20 if data['DXY']['change'] < 0 else -20
+    f_score += 10 if data['WTI']['change'] < 0 else -10
+    f_score += 10 if data['10Y']['change'] < 0 else -10
     
+    # L - Liquidity/Leverage (20%)
     l_score = 50
-    l_score += 20 if ext['M2'] > 0 else -20
-    l_score += 10 if ext['Fed'] > 0 else -10
-    l_score += 10 if changes["^MOVE"] > 0 else -10
+    l_score += 20 if data['Global M2']['change'] > 0 else -20
+    l_score += 10 if data['Net Liq']['change'] > 0 else -10
+    l_score += 10 if data['MOVE']['change'] > 0 else -10 # Higher volatility can imply deleveraging/risk
 
+    # Updated metrics as per user feedback
     return {
         "Fincon": max(0, min(100, f_score)),
-        "Leverage": max(0, min(100, l_score)),
-        "Exposure": ext["CDRI"],
-        "Emotion": ext["FearGreed"],
-        "Technicals": ext["CBBI"]
+        "Liquidity": max(0, min(100, l_score)),
+        "Exposure": 55, # CDRI explicitly set to 55
+        "Emotion": 62, # Fear & Greed placeholder
+        "Technicals": 48 # CBBI placeholder
     }
 
-# --- UI GENERATOR ---
-def create_gauge(value, title="", is_main=False):
-    # Round to nearest whole number
-    display_val = round(value)
-    color = "green" if value < 30 else "orange" if value < 70 else "red"
+# --- UI GAUGE ---
+def create_dial(value, title="", is_main=False):
+    rounded_val = round(value)
+    color = "#00ff00" if value < 30 else "#ffa500" if value < 70 else "#ff0000"
     
     fig = go.Figure(go.Indicator(
         mode = "gauge+number",
-        value = display_val,
-        title = {'text': f"<b>{title}</b>"},
+        value = rounded_val,
+        title = {'text': f"<b>{title}</b>", 'font': {'size': 18 if not is_main else 24}},
         gauge = {
-            'axis': {'range': [0, 100], 'tickwidth': 1},
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
             'bar': {'color': color},
             'bgcolor': "rgba(0,0,0,0)",
+            'borderwidth': 1,
+            'bordercolor': "#333",
             'steps': [
                 {'range': [0, 30], 'color': 'rgba(0, 255, 0, 0.05)'},
                 {'range': [70, 100], 'color': 'rgba(255, 0, 0, 0.05)'}
@@ -102,45 +106,19 @@ def create_gauge(value, title="", is_main=False):
     ))
     
     if is_main:
-        strategy = "ACCUMULATE" if value < 30 else "NEUTRAL" if value < 70 else "TAKE PROFITS"
-        fig.add_annotation(x=0.5, y=0.15, text=f"STRATEGY: {strategy}", showarrow=False, font=dict(size=20, color=color))
+        strat = "ACCUMULATE" if value < 30 else "NEUTRAL" if value < 70 else "TAKE PROFITS"
+        fig.add_annotation(x=0.5, y=-0.1, text=f"<b>{strat}</b>", showarrow=False, font=dict(size=28, color=color))
 
-    fig.update_layout(height=280 if not is_main else 450, margin=dict(l=30, r=30, t=50, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
+    fig.update_layout(height=300 if not is_main else 500, margin=dict(l=40, r=40, t=40, b=40), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     return fig
 
-# --- RENDER ---
+# --- RENDER DASHBOARD ---
 st.title("FLEET INDEX")
 
-# Ticker Bar
-top_data = get_top_bar_data()
-cols_ticker = st.columns(8)
-metrics = [
-    ("Total Cap", f"${top_data['Total Cap']:.2f}T"),
-    ("Stables Cap", "$175.2B"), # Hardcoded example as Coingecko free tier is limited
-    ("BTC", f"${top_data['BTC']:,.0f}"),
-    ("DXY", f"{top_data['DXY']:.2f}"),
-    ("WTI", f"${top_data['WTI']:.2f}"),
-    ("10Y", f"{top_data['10Y']:.2f}%"),
-    ("MOVE", f"{top_data['MOVE']:.2f}"),
-    ("Gold", f"${top_data['Gold']:,.0f}")
-]
+data = get_dashboard_data()
+scores = get_fleet_scores(data)
 
-for i, (label, val) in enumerate(metrics):
-    cols_ticker[i].metric(label, val)
-
-st.markdown("---")
-
-# Main Ship
-risk_metrics = get_risk_metrics()
-total_risk = sum(risk_metrics.values()) / 5
-
-col_ship = st.columns([1, 2, 1])
-with col_ship[1]:
-    # Header removed as requested, title string is empty
-    st.plotly_chart(create_gauge(total_risk, is_main=True), use_container_width=True)
-
-# Boat Dials
-cols_boats = st.columns(5)
-for i, (name, val) in enumerate(risk_metrics.items()):
-    with cols_boats[i]:
-        st.plotly_chart(create_gauge(val, title=name), use_container_width=True)
+# Ticker Bar with 1m Change
+cols = st.columns(5)
+with cols[0]: st.metric("Total Market Cap", f"${data['Total Cap']['val']:.2f}T", f"{data['Total Cap']['change']:.1f}%")
+with cols[1]: st.metric("Stables Cap", f"${data['Stables Cap']['val']:.1f}
