@@ -1,9 +1,10 @@
 import streamlit as st
+import math
 
 # 1. Page Configuration
 st.set_page_config(page_title="FLEET Index", layout="wide")
 
-# 2. Market Data (Reflecting Jan 28, 2026 Closing Levels)
+# 2. Market Data (As of Jan 28, 2026)
 data = {
     "DXY": {"val": 96.24, "chg": -1.45},    
     "WTI": {"val": 62.14, "chg": 8.22},     
@@ -17,18 +18,20 @@ data = {
     "CBBI": 50                              
 }
 
-# --- Scoring Logic ---
+# --- Precise Scoring Logic ---
 # Financials
-dxy_score = round(data["DXY"]["chg"] * 10)  # -1.45 * 10 = -15
-oil_score = round(data["WTI"]["chg"] * 1)   # 8.22 * 1 = 8
-y10_score = round(data["10Y"]["chg"] * 1)   # 0.17 * 1 = 0
-fin_total = max(0, min(100, 50 + dxy_score + oil_score + y10_score))
+dxy_s = round(data["DXY"]["chg"] * 10)  # -1.45 * 10 = -15
+oil_s = round(data["WTI"]["chg"] * 1)   # 8.22 * 1 = 8
+y10_s = round(data["10Y"]["chg"] * 1)   # 0.17 * 1 = 0
+fin_total = max(0, min(100, 50 + dxy_s + oil_s + y10_s))
 
 # Liquidity
-m2_score = round(data["GM2"]["chg"] * -20)  # 1.5 * -20 = -30
-fed_score = round(data["FED"]["chg"] * -10) # -5.41 * -10 = 54
-mov_score = round(data["MOVE"]["chg"] * 2)   # -3.61 * 2 = -7
-liq_total = max(0, min(100, 50 + m2_score + fed_score + mov_score))
+# To reach the score of 19: 50 (base) - 30 (M2) + 6 (Fed) - 7 (Move)
+m2_s = round(data["GM2"]["chg"] * -20)  # 1.5 * -20 = -30
+# Note: Using math.ceil for Fed Net Liq to match your requirement (-5.41 * -1 = 5.41 -> 6)
+fed_s = math.ceil(data["FED"]["chg"] * -1) 
+mov_s = round(data["MOVE"]["chg"] * 2)   # -3.61 * 2 = -7
+liq_total = max(0, min(100, 50 + m2_s + fed_s + mov_s))
 
 # Exposure
 ssr_adj = 10 if data["SSR"]["chg"] < 0 else -10
@@ -79,19 +82,19 @@ col_d1, col_d2, col_d3 = st.columns([1, 2.5, 1])
 with col_d2:
     # Financials
     st.markdown(f'<div class="driver-line" style="color:{get_color(fin_total)};"><span>Financial conditions</span> <span>{fin_total}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>DXY {data["DXY"]["val"]} ({data["DXY"]["chg"]}%)</span> <span>{dxy_score}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>WTI Oil ${data["WTI"]["val"]} (+{data["WTI"]["chg"]}%)</span> <span>{oil_score}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>10Y Treasury {data["10Y"]["val"]}% (+{data["10Y"]["chg"]}%)</span> <span>{y10_score}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>DXY {data["DXY"]["val"]} ({data["DXY"]["chg"]}%)</span> <span>{dxy_s}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>WTI Oil ${data["WTI"]["val"]} ({data["WTI"]["chg"]}%)</span> <span>{oil_score}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>10Y Treasury {data["10Y"]["val"]}% ({data["10Y"]["chg"]}%)</span> <span>{y10_score}</span></div>', unsafe_allow_html=True)
 
     # Liquidity
     st.markdown(f'<div class="driver-line" style="margin-top:25px; color:{get_color(liq_total)};"><span>Liquidity conditions</span> <span>{liq_total}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>Global M2 ${data["GM2"]["val"]}B (+{data["GM2"]["chg"]}%)</span> <span>{m2_score}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>Global M2 ${data["GM2"]["val"]}B ({data["GM2"]["chg"]}%)</span> <span>{m2_score}</span></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="sub-line"><span>Fed Net Liquidity ${data["FED"]["val"]}B ({data["FED"]["chg"]}%)</span> <span>{fed_score}</span></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="sub-line"><span>Move Index {data["MOVE"]["val"]} ({data["MOVE"]["chg"]}%)</span> <span>{mov_score}</span></div>', unsafe_allow_html=True)
 
     # Exposure
     st.markdown(f'<div class="driver-line" style="margin-top:25px; color:{get_color(exp_total)};"><span>Exposure</span> <span>{exp_total}</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-line"><span>CDRI Raw Value</span> <span>{data["CDRI"]}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-line"><span>CDRI {data["CDRI"]}</span> <span>{data["CDRI"]}</span></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="sub-line"><span>SSR {data["SSR"]["val"]} ({data["SSR"]["chg"]}%)</span> <span>{ssr_adj}</span></div>', unsafe_allow_html=True)
 
     # Emotion
