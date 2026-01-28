@@ -1,162 +1,117 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
+import yfinance as yf
 import requests
-import datetime
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
 
-# --- SET PAGE CONFIG ---
-st.set_page_config(page_title="FLEET INDEX", layout="wide")
+# --- Configuration ---
+st.set_page_config(page_title="FLEET Index - Crypto Risk Dashboard", layout="wide")
 
-# --- CUSTOM CSS ---
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; color: #ffffff; }
-    [data-testid="stMetricValue"] { font-size: 1.6rem !important; font-weight: 700; }
-    [data-testid="stMetricDelta"] { font-size: 0.85rem !important; }
-    .stMetric { background-color: #161a25; border: 1px solid #333; padding: 12px; border-radius: 8px; }
-    h1 { font-weight: 900; letter-spacing: -1.5px; margin-bottom: 5px; color: #ffffff; text-transform: uppercase; }
-    hr { margin: 1.5rem 0; border-color: #333; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("🚢 FLEET Index: Crypto Market Cycle Risk")
+st.markdown("A comprehensive tracker for macro, liquidity, exposure, emotion, and technical signals.")
 
-# --- DATA FETCHING ENGINE ---
-@st.cache_data(ttl=300)
-def get_dashboard_data():
-    """Fetch live prices, 1-month changes, and macro data."""
+# --- Data Fetching Functions ---
+
+@st.cache_data(ttl=3600)
+def fetch_macro_data():
+    # Tickers: DXY (Dollar), WTI (Oil), 10Y (Treasury), MOVE (Bond Volatility)
     tickers = {
-        "BTC": "BTC-USD",
         "DXY": "DX-Y.NYB",
-        "WTI": "CL=F",
-        "10Y": "^TNX",
-        "MOVE": "^MOVE",
-        "Gold": "GC=F"
+        "WTI Oil": "CL=F",
+        "10Y Treasury": "^TNX",
+        "MOVE Index": "^MOVE"
     }
-    
-    results = {}
-    for name, sym in tickers.items():
-        try:
-            ticker = yf.Ticker(sym)
-            hist = ticker.history(period="2mo")
-            if not hist.empty:
-                current = hist['Close'].iloc[-1]
-                # 1-month change (approx 22 trading days)
-                prev = hist['Close'].iloc[-22] if len(hist) > 22 else hist['Close'].iloc[0]
-                change = ((current - prev) / prev) * 100
-                results[name] = {"val": current, "change": change}
-            else:
-                results[name] = {"val": 0.0, "change": 0.0}
-        except:
-            results[name] = {"val": 0.0, "change": 0.0}
+    data = {}
+    for label, ticker in tickers.items():
+        t = yf.Ticker(ticker)
+        hist = t.history(period="2mo")
+        if not hist.empty:
+            current = hist['Close'].iloc[-1]
+            prev_month = hist['Close'].iloc[0]
+            change = ((current - prev_month) / prev_month) * 100
+            data[label] = {"level": round(current, 2), "change": round(change, 2)}
+    return data
 
-    # Crypto Global Market Cap
+@st.cache_data(ttl=3600)
+def fetch_crypto_metrics():
+    # CBBI (ColinTalksCrypto)
     try:
-        cg_res = requests.get("https://api.coingecko.com/api/v3/global", timeout=5).json()
-        total_mcap = cg_res['data']['total_market_cap']['usd'] / 1e12
-        mcap_change = cg_res['data']['market_cap_change_percentage_24h_usd']
-        results["Total Cap"] = {"val": total_mcap, "change": mcap_change}
+        cbbi_res = requests.get("https://colintalkscrypto.com/cbbi/data/latest.json").json()
+        cbbi_val = list(cbbi_res.values())[-1] * 100 # Standardized to 0-100
     except:
-        results["Total Cap"] = {"val": 3.42, "change": 0.8}
+        cbbi_val = "N/A"
 
-    # Macro/Liquidity Data Points (Live Jan 2026 Estimates)
-    results["Stables Cap"] = {"val": 182.4, "change": 0.55} 
-    results["Global M2"] = {"val": 101.2, "change": 0.32} 
-    results["Net Liq"] = {"val": 5.85, "change": -0.15}  
+    # Fear and Greed (Alternative.me API used as standard source for CMC data)
+    try:
+        fng_res = requests.get("https://api.alternative.me/fng/").json()
+        fng_val = fng_res['data'][0]['value']
+        fng_class = fng_res['data'][0]['value_classification']
+    except:
+        fng_val, fng_class = "N/A", "N/A"
 
-    return results
+    return {"CBBI": cbbi_val, "F&G": fng_val, "F&G Class": fng_class}
 
-# --- FLEET RISK CALCULATION ---
-def get_fleet_scores(data):
-    # F - Fincon (20%)
-    f_score = 50
-    f_score += 20 if data['DXY']['change'] < 0 else -20
-    f_score += 10 if data['WTI']['change'] < 0 else -10
-    f_score += 10 if data['10Y']['change'] < 0 else -10
-    
-    # L - Liquidity (20%)
-    l_score = 50
-    l_score += 20 if data['Global M2']['change'] > 0 else -20
-    l_score += 10 if data['Net Liq']['change'] > 0 else -10
-    l_score += 10 if data['MOVE']['change'] > 0 else -10 
+# --- Dashboard Layout ---
 
-    return {
-        "Fincon": max(0, min(100, f_score)),
-        "Liquidity": max(0, min(100, l_score)),
-        "Exposure": 55,       # CDRI Fixed at 55
-        "Emotion": 68,        # Proxy for Fear & Greed
-        "Technicals": 42      # Proxy for CBBI
-    }
+macro = fetch_macro_data()
+crypto = fetch_crypto_metrics()
 
-# --- VISUALS: GAUGE COMPONENT ---
-def create_dial(value, title="", is_main=False):
-    rounded_val = round(value)
-    color = "#00ff00" if value < 30 else "#ffa500" if value < 70 else "#ff0000"
-    
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = rounded_val,
-        title = {'text': f"<b>{title}</b>", 'font': {'size': 16}},
-        gauge = {
-            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
-            'bar': {'color': color},
-            'bgcolor': "rgba(0,0,0,0)",
-            'borderwidth': 1.5,
-            'bordercolor': "#333",
-            'steps': [
-                {'range': [0, 30], 'color': 'rgba(0, 255, 0, 0.05)'},
-                {'range': [70, 100], 'color': 'rgba(255, 0, 0, 0.05)'}
-            ]
-        }
-    ))
-    
-    if is_main:
-        strat = "ACCUMULATE" if value < 30 else "NEUTRAL" if value < 70 else "TAKE PROFITS"
-        fig.add_annotation(x=0.5, y=-0.15, text=f"<b>{strat}</b>", showarrow=False, font=dict(size=32, color=color))
-        # Remove the internal title for the main dial to keep it clean
-        fig.update_layout(title="")
+# Section 1: Fincon (Financial Conditions)
+st.header("🌐 Fincon")
+col1, col2, col3 = st.columns(3)
+col1.metric("DXY Index", f"{macro['DXY']['level']}", f"{macro['DXY']['change']}% (1m)")
+col2.metric("WTI Oil", f"${macro['WTI Oil']['level']}", f"{macro['WTI Oil']['change']}% (1m)")
+col3.metric("10Y Treasury", f"{macro['10Y Treasury']['level']}%", f"{macro['10Y Treasury']['change']}% (1m)")
 
-    fig.update_layout(
-        height=320 if not is_main else 480, 
-        margin=dict(l=30, r=30, t=30, b=50), 
-        paper_bgcolor='rgba(0,0,0,0)', 
-        font={'color': "white"}
-    )
-    return fig
+st.divider()
 
-# --- RENDER LAYOUT ---
-st.title("FLEET INDEX")
+# Section 2: Liquidity
+st.header("💧 Liquidity")
+l_col1, l_col2, l_col3 = st.columns(3)
+# Note: StreetStats typically requires scraping or a specific API key for Z-scores
+l_col1.info("**Global M2 (1m % Change Z-Score)**\n\n[View on StreetStats](https://streetstats.finance/liquidity/money)")
+l_col2.info("**Fed Net Liquidity (1m % Change Z-Score)**\n\n[View on StreetStats](https://streetstats.finance/liquidity/fed-balance-sheet)")
+l_col3.metric("MOVE Index (Bond Vol)", f"{macro['MOVE Index']['level']}", f"{macro['MOVE Index']['change']}% (1m)")
 
-data = get_dashboard_data()
-scores = get_fleet_scores(data)
+st.divider()
 
-# Ticker Bar Row 1: Crypto & Liquidity
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Total Market Cap", f"${data['Total Cap']['val']:.2f}T", f"{data['Total Cap']['change']:.2f}%")
-c2.metric("Stables Cap", f"${data['Stables Cap']['val']:.1f}B", f"{data['Stables Cap']['change']:.2f}%")
-c3.metric("Global M2", f"${data['Global M2']['val']:.1f}T", f"{data['Global M2']['change']:.2f}%")
-c4.metric("Net Liquidity", f"${data['Net Liq']['val']:.2f}T", f"{data['Net Liq']['change']:.2f}%")
-c5.metric("BTC Price", f"${data['BTC']['val']:,.0f}", f"{data['BTC']['change']:.2f}%")
+# Section 3: Exposure & Emotion
+e_col1, e_col2 = st.columns(2)
 
-# Ticker Bar Row 2: Macro
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("DXY", f"{data['DXY']['val']:.2f}", f"{data['DXY']['change']:.2f}%", delta_color="inverse")
-m2.metric("WTI Oil", f"${data['WTI']['val']:.2f}", f"{data['WTI']['change']:.2f}%", delta_color="inverse")
-m3.metric("10Y Yield", f"{data['10Y']['val']:.2f}%", f"{data['10Y']['change']:.2f}%", delta_color="inverse")
-m4.metric("MOVE Index", f"{data['MOVE']['val']:.2f}", f"{data['MOVE']['change']:.2f}%", delta_color="inverse")
-m5.metric("Gold Price", f"${data['Gold']['val']:,.0f}", f"{data['Gold']['change']:.2f}%")
+with e_col1:
+    st.header("📊 Exposure")
+    st.markdown("**Derivatives Risk Index (CDRI)**")
+    st.write("Current CDRI: [Check CoinGlass Live Data](https://www.coinglass.com/pro/i/CDRI)")
+    st.caption("High CDRI (>80) indicates overheated leverage and high liquidation risk.")
 
-st.markdown("---")
+with e_col2:
+    st.header("🧠 Emotion")
+    st.metric("Fear & Greed Index", f"{crypto['F&G']}/100", crypto['F&G Class'])
+    st.caption("Source: CoinMarketCap / Alternative.me")
 
-# Center Piece: The "Ship" (Total Risk)
-total_risk = sum(scores.values()) / 5
-_, col_ship_mid, _ = st.columns([1, 2, 1])
-with col_ship_mid:
-    st.plotly_chart(create_dial(total_risk, is_main=True), use_container_width=True)
+st.divider()
 
-# The "Boats" (Individual Drivers)
-boat_cols = st.columns(5)
-for i, (name, val) in enumerate(scores.items()):
-    with boat_cols[i]:
-        st.plotly_chart(create_dial(val, title=name), use_container_width=True)
+# Section 4: Technicals
+st.header("📈 Technicals")
+t_col1, t_col2 = st.columns([1, 2])
 
-st.caption(f"FLEET Engine v2.6 | Last Update: {datetime.datetime.now().strftime('%H:%M:%S')} UTC")
+with t_col1:
+    st.metric("CBBI Confidence", f"{crypto['CBBI']}%")
+    st.progress(float(crypto['CBBI'])/100 if crypto['CBBI'] != "N/A" else 0)
+    st.caption("0 = Cycle Bottom | 100 = Cycle Peak")
+
+with t_col2:
+    st.write("**Cycle Status Interpretation**")
+    val = crypto['CBBI']
+    if val != "N/A":
+        if val > 80: st.error("⚠️ Extreme Risk: Historically near cycle peaks.")
+        elif val > 60: st.warning("Orange Zone: Market is heating up.")
+        elif val < 20: st.success("🟢 Accumulation Zone: Historically near cycle bottoms.")
+        else: st.info("Neutral: Mid-cycle movement.")
+
+# --- Footer ---
+st.sidebar.markdown("### FLEET Index Settings")
+st.sidebar.write("Last Updated:", datetime.now().strftime("%Y-%m-%d %H:%M"))
+if st.sidebar.button("Refresh Data"):
+    st.cache_data.clear()
