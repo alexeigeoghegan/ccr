@@ -2,153 +2,106 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import requests
-import plotly.graph_objects as go
 from datetime import datetime
 
 # --- Configuration ---
-st.set_page_config(page_title="FLEET Index - Crypto Risk Dashboard", layout="wide")
+st.set_page_config(page_title="FLEET Index", layout="wide")
 
 st.title("🚢 FLEET Index: Crypto Market Cycle Risk")
-st.markdown("Automated tracking for macro, liquidity, exposure, emotion, and technical signals.")
 
-# --- Data Fetching Functions ---
+# --- Improved Data Fetching ---
 
 @st.cache_data(ttl=3600)
-def fetch_macro_data():
-    tickers = {
-        "DXY": "DX-Y.NYB",
-        "WTI Oil": "CL=F",
-        "10Y Treasury": "^TNX",
-        "MOVE Index": "^MOVE"
-    }
+def fetch_liquidity_data():
+    """Scrapes Z-scores by matching column names and row labels."""
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    results = {"Global M2": "N/A", "Fed Liquidity": "N/A"}
+    
+    # 1. Global M2 Scraper
+    try:
+        m2_url = "https://streetstats.finance/liquidity/money"
+        # Search for tables containing the target row
+        tables = pd.read_html(requests.get(m2_url, headers=headers).text, match="Global Total")
+        for df in tables:
+            # Flatten multi-index if it exists
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(-1)
+            
+            # Look for 'Global Total' row and '1 Month' column
+            row = df[df.iloc[:, 0].str.contains("Global Total", na=False)]
+            if not row.empty and "1 Month" in df.columns:
+                results["Global M2"] = row["1 Month"].values[0]
+                break
+    except: pass
+
+    # 2. Fed Net Liquidity Scraper
+    try:
+        fed_url = "https://streetstats.finance/liquidity/fed-balance-sheet"
+        tables = pd.read_html(requests.get(fed_url, headers=headers).text, match="Net Liquidity")
+        for df in tables:
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(-1)
+            
+            row = df[df.iloc[:, 0].str.contains("Net Liquidity", na=False)]
+            if not row.empty and "1 Month" in df.columns:
+                results["Fed Liquidity"] = row["1 Month"].values[0]
+                break
+    except: pass
+        
+    return results
+
+@st.cache_data(ttl=3600)
+def fetch_macro():
+    # Tickers for DXY, WTI, 10Y, and MOVE
+    tickers = {"DXY": "DX-Y.NYB", "WTI Oil": "CL=F", "10Y": "^TNX", "MOVE": "^MOVE"}
     data = {}
-    for label, ticker in tickers.items():
+    for k, v in tickers.items():
         try:
-            t = yf.Ticker(ticker)
-            hist = t.history(period="2mo")
-            if not hist.empty:
-                current = hist['Close'].iloc[-1]
-                prev_month = hist['Close'].iloc[0]
-                change = ((current - prev_month) / prev_month) * 100
-                data[label] = {"level": round(current, 2), "change": round(change, 2)}
-        except:
-            data[label] = {"level": "N/A", "change": 0}
+            h = yf.Ticker(v).history(period="2mo")
+            curr, prev = h['Close'].iloc[-1], h['Close'].iloc[0]
+            data[k] = {"val": round(curr, 2), "chg": round(((curr-prev)/prev)*100, 2)}
+        except: data[k] = {"val": "N/A", "chg": 0}
     return data
 
 @st.cache_data(ttl=3600)
-def fetch_liquidity_z_scores():
-    """Scrapes Z-scores directly from StreetStats tables."""
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    liquidity_data = {"Global M2": "N/A", "Fed Liquidity": "N/A"}
-    
+def fetch_crypto():
+    # CBBI and Fear & Greed
     try:
-        # Fetch Global M2 Z-Score
-        m2_url = "https://streetstats.finance/liquidity/money"
-        m2_tables = pd.read_html(requests.get(m2_url, headers=headers).text)
-        # Find the table containing 'Global Total'
-        m2_df = [df for df in m2_tables if 'Global Total' in df.values][0]
-        # In their table: Row 'Global Total', Column '1 Month' is index 4
-        liquidity_data["Global M2"] = m2_df.iloc[-1, 4]
-    except Exception as e:
-        pass
-
+        cbbi = requests.get("https://colintalkscrypto.com/cbbi/data/latest.json").json()
+        cbbi_val = list(cbbi.values())[-1] * 100
+    except: cbbi_val = "N/A"
     try:
-        # Fetch Fed Net Liquidity Z-Score
-        fed_url = "https://streetstats.finance/liquidity/fed-balance-sheet"
-        fed_tables = pd.read_html(requests.get(fed_url, headers=headers).text)
-        # Find the table containing 'Net Liquidity'
-        fed_df = [df for df in fed_tables if 'Net Liquidity' in df.values][0]
-        # In their table: Row 'Net Liquidity', Column '1 Month' is index 4
-        liquidity_data["Fed Liquidity"] = fed_df.iloc[-1, 4]
-    except Exception as e:
-        pass
-        
-    return liquidity_data
+        fng = requests.get("https://api.alternative.me/fng/").json()
+        fng_val = fng['data'][0]['value']
+    except: fng_val = "N/A"
+    return {"CBBI": cbbi_val, "F&G": fng_val}
 
-@st.cache_data(ttl=3600)
-def fetch_crypto_metrics():
-    # CBBI Peak Index
-    try:
-        cbbi_res = requests.get("https://colintalkscrypto.com/cbbi/data/latest.json").json()
-        cbbi_val = list(cbbi_res.values())[-1] * 100 
-    except:
-        cbbi_val = "N/A"
+# --- Layout ---
 
-    # Fear and Greed
-    try:
-        fng_res = requests.get("https://api.alternative.me/fng/").json()
-        fng_val = fng_res['data'][0]['value']
-        fng_class = fng_res['data'][0]['value_classification']
-    except:
-        fng_val, fng_class = "N/A", "N/A"
+macro = fetch_macro()
+liq = fetch_liquidity_data()
+crypto = fetch_crypto()
 
-    return {"CBBI": cbbi_val, "F&G": fng_val, "F&G Class": fng_class}
-
-# --- Dashboard Layout ---
-
-macro = fetch_macro_data()
-liquidity = fetch_liquidity_z_scores()
-crypto = fetch_crypto_metrics()
-
-# Section 1: Fincon
-st.header("🌐 Fincon")
-col1, col2, col3 = st.columns(3)
-col1.metric("DXY Index", f"{macro['DXY']['level']}", f"{macro['DXY']['change']}% (1m)")
-col2.metric("WTI Oil", f"${macro['WTI Oil']['level']}", f"{macro['WTI Oil']['change']}% (1m)")
-col3.metric("10Y Treasury", f"{macro['10Y Treasury']['level']}%", f"{macro['10Y Treasury']['change']}% (1m)")
-
-st.divider()
-
-# Section 2: Liquidity
+# Section: Liquidity
 st.header("💧 Liquidity")
-l_col1, l_col2, l_col3 = st.columns(3)
+l1, l2, l3 = st.columns(3)
 
-def format_z(val):
-    if val == "N/A": return "N/A"
-    return f"{float(val):+.2f}"
+def clean_z(v):
+    try: return f"{float(v):+.2f}"
+    except: return "N/A"
 
-l_col1.metric("Global M2 (1m Z-Score)", format_z(liquidity["Global M2"]))
-l_col2.metric("Fed Net Liq (1m Z-Score)", format_z(liquidity["Fed Liquidity"]))
-l_col3.metric("MOVE Index (Bond Vol)", f"{macro['MOVE Index']['level']}", f"{macro['MOVE Index']['change']}% (1m)")
-st.caption("Z-Score Logic: > +1.0 is highly stimulative (Bullish), < -1.0 is restrictive (Bearish).")
-
-st.divider()
-
-# Section 3: Exposure & Emotion
-e_col1, e_col2 = st.columns(2)
-with e_col1:
-    st.header("📊 Exposure")
-    st.markdown("**Derivatives Risk Index (CDRI)**")
-    # CoinGlass data usually requires a premium API key for direct embedding; 
-    # displaying a deep link for accuracy in the meantime.
-    st.info("Current CDRI: [View live at CoinGlass](https://www.coinglass.com/pro/i/CDRI)")
-
-with e_col2:
-    st.header("🧠 Emotion")
-    st.metric("Fear & Greed Index", f"{crypto['F&G']}/100", crypto['F&G Class'])
+l1.metric("Global M2 (1m Z-Score)", clean_z(liq["Global M2"]))
+l2.metric("Fed Net Liq (1m Z-Score)", clean_z(liq["Fed Liquidity"]))
+l3.metric("MOVE Index", f"{macro['MOVE']['val']}", f"{macro['MOVE']['chg']}%")
 
 st.divider()
 
-# Section 4: Technicals
-st.header("📈 Technicals")
-t_col1, t_col2 = st.columns([1, 2])
+# Section: Macro & Technicals
+st.header("🌍 Macro & Technicals")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("DXY Index", macro['DXY']['val'], f"{macro['DXY']['chg']}%")
+c2.metric("10Y Yield", f"{macro['10Y']['val']}%", f"{macro['10Y']['chg']}%")
+c3.metric("Fear & Greed", f"{crypto['F&G']}/100")
+c4.metric("CBBI Index", f"{crypto['CBBI']}%")
 
-with t_col1:
-    st.metric("CBBI Confidence", f"{crypto['CBBI']}%")
-    val = crypto['CBBI']
-    if val != "N/A":
-        st.progress(float(val)/100)
-
-with t_col2:
-    if val != "N/A":
-        if val > 80: st.error("⚠️ Peak Territory: Risk is extremely high.")
-        elif val > 60: st.warning("Late Cycle: Market is heating up.")
-        elif val < 25: st.success("Accumulation: Historically a value zone.")
-        else: st.info("Neutral: Mid-cycle trend.")
-
-# --- Sidebar ---
-st.sidebar.markdown("### FLEET Index Settings")
-st.sidebar.write("Last Sync:", datetime.now().strftime("%H:%M:%S"))
-if st.sidebar.button("Force Refresh"):
-    st.cache_data.clear()
-    st.rerun()
+st.info("The FLEET Index helps identify cycle tops. Higher Z-scores in Liquidity + high CBBI = Extreme Risk.")
