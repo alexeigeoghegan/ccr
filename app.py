@@ -8,7 +8,7 @@ st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wid
 # --- DATA FETCHING ---
 @st.cache_data(ttl=300)
 def fetch_macro():
-    # Using the specific March 2026 Future Ticker for DXY accuracy
+    # March 2026 DXY Future + 10Y Yield + Oil
     tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F"}
     data = {}
     for name, sym in tickers.items():
@@ -21,8 +21,8 @@ def fetch_macro():
 def fetch_emotion():
     try:
         r = requests.get("https://api.alternative.me/fng/").json()
-        return r['data'][0]['value'], r['data'][0]['value_classification']
-    except: return "N/A", "N/A"
+        return int(r['data'][0]['value']), r['data'][0]['value_classification']
+    except: return 0, "N/A"
 
 macro = fetch_macro()
 f_val, f_label = fetch_emotion()
@@ -39,42 +39,54 @@ st.markdown("---")
 st.title("⚒️ METAL Cycle Risk Tracker")
 m, e, t, a, l = st.columns(5)
 
+# M - MACRO
 with m:
     st.header("M")
     st.write("**Macro**")
-    st.info(f"DXY: {macro['DXY']}")
+    st.metric("DXY", macro['DXY'])
+    st.caption("DXY Target: < 95")
 
+# E - EMOTION
 with e:
     st.header("E")
     st.write("**Emotion**")
-    st.success(f"{f_val} ({f_label})")
+    st.metric("Fear & Greed", f_val, help=f_label)
+    st.caption(f"Status: {f_label}")
 
+# T - TECHNICALS (CBBI)
 with t:
     st.header("T")
     st.write("**Technicals**")
-    st.link_button("Check CBBI Score", "https://colintalkscrypto.com/cbbi/")
+    # Using a slider for CBBI as it's the most common user-updated value
+    cbbi_score = st.slider("CBBI Score", 0, 100, 36, key="cbbi_input")
+    st.caption("[Open CBBI Chart](https://colintalkscrypto.com/cbbi/)")
 
+# A - ADOPTION (Power Law)
 with a:
     st.header("A")
     st.write("**Adoption**")
-    st.link_button("Check Power Law", "https://charts.bitbo.io/power-law-oscillator/")
+    # Overwrite directly in site: Slider for -1 to +1
+    pl_raw = st.slider("Power Law Value", -1.0, 1.0, 0.0, step=0.01, help="Adjust based on Bitbo Oscillator")
+    # Calculation: (Value + 1) * 50 converts -1/+1 range to 0/100
+    pl_score = int((pl_raw + 1) * 50)
+    st.metric("Adoption Score", pl_score)
+    st.caption("[Open Power Law](https://charts.bitbo.io/power-law-oscillator/)")
 
+# L - LEVERAGE (CDRI)
 with l:
     st.header("L")
-    st.subheader("Leverage")
-    st.link_button("Check CDRI Risk", "https://www.coinglass.com/pro/i/CDRI")
+    st.write("**Leverage**")
+    lev_risk = st.select_slider("CDRI Risk Level", options=["Low", "Neutral", "High", "Extreme"], value="Neutral")
+    # Convert text to numeric for potential risk averaging
+    lev_map = {"Low": 25, "Neutral": 50, "High": 75, "Extreme": 100}
+    st.metric("Leverage Score", lev_map[lev_risk])
+    st.caption("[Open Coinglass CDRI](https://www.coinglass.com/pro/i/CDRI)")
 
-# --- MANUAL INPUT (Sidebar) ---
-st.sidebar.title("Update Dashboard")
-st.sidebar.write("Input values from sources above:")
-manual_t = st.sidebar.number_input("T (CBBI Score)", 0, 100, 36)
-manual_a = st.sidebar.number_input("A (Power Law %)", -1.0, 1.0, 0.0)
-manual_l = st.sidebar.select_slider("L (Leverage Risk)", ["Low", "Neutral", "High", "Extreme"])
+# --- TOTAL RISK CALCULATION ---
+st.markdown("---")
+total_risk = (int(f_val) + cbbi_score + pl_score + lev_map[lev_risk]) / 4
+st.subheader(f"Combined METAL Risk Score: {total_risk:.1f}%")
+st.progress(total_risk / 100)
 
-# Displaying Manual Values in the Main UI
-with t: st.metric("Live Log", manual_t)
-with a: st.metric("Live Log", manual_a)
-with l: st.metric("Live Log", manual_l)
-
-st.sidebar.divider()
+st.sidebar.title("METAL Reference")
 st.sidebar.info("Reference: Sell | Fifty Sell | 2 Anytime Alerts")
