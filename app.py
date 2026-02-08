@@ -1,121 +1,121 @@
 import streamlit as st
 import yfinance as yf
+import plotly.graph_objects as go
 import requests
 
 # Page Configuration
-st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wide")
+st.set_page_config(page_title="METAL Index", page_icon="⚒️", layout="wide")
 
-# --- DATA FETCHING ---
+# --- DATA FETCHING (DXY & Yields) ---
 @st.cache_data(ttl=300)
-def fetch_live_data():
-    # Tickers for Momentum
+def fetch_live_macro():
+    # March 2026 Tickers
     tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F"}
     data = {}
     for name, sym in tickers.items():
         try:
             df = yf.Ticker(sym).history(period="30d")
             if not df.empty:
-                curr = df['Close'].iloc[-1]
-                prev = df['Close'].iloc[0]
+                curr, prev = df['Close'].iloc[-1], df['Close'].iloc[0]
                 data[f"{name}_mom"] = round(((curr - prev) / prev) * 100, 2)
             else: data[f"{name}_mom"] = 0.0
         except: data[f"{name}_mom"] = 0.0
-    
-    # Fear & Greed API
-    try:
-        e_req = requests.get("https://api.alternative.me/fng/").json()
-        data["e_score"] = int(e_req['data'][0]['value'])
-    except: data["e_score"] = 7 # Feb 2026 Extreme Fear levels
-
-    # Mocking Liquidity (Baseline for Feb 2026)
-    data["m2_mom"] = 1.73  
-    data["fed_mom"] = -0.57
-    data["t_score"] = 36 
-    
     return data
 
-live = fetch_live_data()
+live = fetch_live_macro()
 
-# --- CALCULATIONS ---
-# Macro Score (M)
-m_calc = 50 + (live['m2_mom'] * 2) + (live['fed_mom'] * 2) - (live['DXY_mom']) - (live['Oil_mom'] * 2) - (live['10Y_mom'])
-m_score = int(max(0, min(100, m_calc)))
+st.title("⚒️ METAL Index")
 
-# Adoption Score (A)
-# We keep the slider for the raw -1 to +1 input
-st.sidebar.title("Manual Overwrites")
-raw_a = st.sidebar.slider("Adoption: Power Law (-1 to +1)", -1.0, 1.0, 0.48, step=0.01)
-a_score = int((raw_a + 1) * 50)
+# --- MAIN OVERWRITE SECTION ---
+st.markdown("### 🎛️ Manual Overwrites & Adjustments")
+col_input1, col_input2, col_input3 = st.columns(3)
 
-# Leverage Score (L)
-l_score = st.sidebar.slider("Leverage: CDRI Value (0-100)", 0, 100, 50)
+with col_input1:
+    st.write("**T: Technicals**")
+    t_score = 36 # Fixed per retrieved 2026 data
+    st.info(f"Retrieved CBBI: {t_score}")
+    
+with col_input2:
+    st.write("**A: Adoption**")
+    raw_a = st.slider("Power Law Oscillator (-1 to +1)", -1.0, 1.0, 0.48, step=0.01)
+    a_score = int((raw_a + 1) * 50)
+    st.caption("[View Bitbo Chart](https://charts.bitbo.io/power-law-oscillator/)")
 
-# Total Risk (Rounded to 0 decimal places)
-metal_risk = round((m_score + live['e_score'] + live['t_score'] + a_score + l_score) / 5)
+with col_input3:
+    st.write("**L: Leverage**")
+    l_score = st.slider("CDRI Risk Value (0-100)", 0, 100, 50)
+    st.caption("[View Coinglass CDRI](https://www.coinglass.com/pro/i/CDRI/)")
 
-# --- UI DISPLAY ---
-st.title("⚒️ METAL Cycle Risk Tracker")
-col_m, col_e, col_t, col_a, col_l = st.columns(5)
-
-# M - MACRO
-with col_m:
-    st.header(f"M ({m_score})")
-    st.write("**Macro Momentum**")
-    st.write(f"• Global M2: `{live['m2_mom']}%`")
-    st.write(f"• Fed Net: `{live['fed_mom']}%`")
-    st.write(f"• DXY: `{live['DXY_mom']}%`")
-    st.write(f"• Oil: `{live['Oil_mom']}%`")
-    st.write(f"• 10Y Yield: `{live['10Y_mom']}%`")
-    st.caption("Weight: 20%")
-
-# E - EMOTION
-with col_e:
-    st.header(f"E ({live['e_score']})")
-    st.write("**Fear & Greed**")
-    st.metric("Sentiment", live['e_score'])
-    st.caption("Weight: 20%")
-
-# T - TECHNICALS
-with col_t:
-    st.header(f"T ({live['t_score']})")
-    st.write("**CBBI Index**")
-    st.metric("Index Level", live['t_score'])
-    st.caption("Weight: 20%")
-
-# A - ADOPTION
-with col_a:
-    st.header(f"A ({a_score})")
-    st.write("**Power Law**")
-    st.metric("Score", a_score)
-    st.link_button("View Chart", "https://charts.bitbo.io/power-law-oscillator/")
-    st.caption("Weight: 20%")
-
-# L - LEVERAGE
-with col_l:
-    st.header(f"L ({l_score})")
-    st.write("**CDRI Risk**")
-    st.metric("Leverage", l_score)
-    st.link_button("View CDRI", "https://www.coinglass.com/pro/i/CDRI")
-    st.caption("Weight: 20%")
-
-# --- FINAL RISK BAR ---
 st.markdown("---")
 
-if metal_risk >= 70:
-    color, label = "red", "HIGH RISK"
-elif metal_risk <= 30:
-    color, label = "green", "LOW RISK"
-else:
-    color, label = "#007BFF", "MEDIUM RISK"
+# --- M: MACRO MOMENTUM LOGIC ---
+st.subheader("M: Macro Momentum Settings")
+m_cols = st.columns(5)
 
-st.subheader(f"Combined METAL Risk Score: {metal_risk}")
+# Macro Scoring Logic based on your specific rules
+m_base = 50
 
-# Styling
-st.markdown(f"""
-    <style>
-        .stProgress > div > div > div > div {{ background-color: {color}; }}
-        .risk-text {{ color: {color}; text-align: center; font-weight: bold; font-size: 28px; }}
-    </style>
-    <div class="risk-text">{label}</div>
-    """, unsafe_allow_html=True)
-st.progress(metal_risk / 100)
+with m_cols[0]:
+    m2_choice = st.radio("Global M2 MoM", ["Lower", "Higher"], index=1, horizontal=True)
+    m_base += 10 if m2_choice == "Higher" else 0
+    st.caption("Threshold: > -15")
+
+with m_cols[1]:
+    fed_choice = st.radio("Fed Net MoM", ["Lower", "Higher"], index=1, horizontal=True)
+    m_base += 10 if fed_choice == "Higher" else 0
+    st.caption("Threshold: > -7")
+
+with m_cols[2]:
+    dxy_choice = st.radio("DXY MoM", ["Lower", "Higher"], index=0, horizontal=True)
+    m_base -= 15 if dxy_choice == "Higher" else 0
+    st.caption("Threshold: +15")
+
+with m_cols[3]:
+    oil_choice = st.radio("Oil MoM", ["Lower", "Higher"], index=0, horizontal=True)
+    m_base -= 10 if oil_choice == "Higher" else 0
+    st.caption("Threshold: +3")
+
+with m_cols[4]:
+    teny_choice = st.radio("10Y MoM", ["Lower", "Higher"], index=0, horizontal=True)
+    m_base -= 15 if teny_choice == "Higher" else 0
+    st.caption("Threshold: +10")
+
+m_score = int(max(0, min(100, m_base)))
+
+# --- RISK GAUGE CALCULATION ---
+try:
+    e_req = requests.get("https://api.alternative.me/fng/").json()
+    e_score = int(e_req['data'][0]['value'])
+except: e_score = 7
+
+final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
+
+# --- VISUAL GAUGE ---
+st.markdown("---")
+if final_risk >= 70: color, label = "red", "HIGH RISK"
+elif final_risk <= 30: color, label = "green", "LOW RISK"
+else: color, label = "#31333F", "MEDIUM RISK"
+
+fig = go.Figure(go.Indicator(
+    mode = "gauge+number",
+    value = final_risk,
+    domain = {'x': [0, 1], 'y': [0, 1]},
+    title = {'text': f"<b>{label}</b>", 'font': {'size': 24, 'color': color}},
+    gauge = {
+        'axis': {'range': [0, 100], 'tickwidth': 1},
+        'bar': {'color': color},
+        'bgcolor': "white",
+        'borderwidth': 2,
+        'bordercolor': "gray",
+        'steps': [
+            {'range': [0, 30], 'color': 'rgba(0, 255, 0, 0.1)'},
+            {'range': [30, 70], 'color': 'rgba(0, 0, 255, 0.1)'},
+            {'range': [70, 100], 'color': 'rgba(255, 0, 0, 0.1)'}
+        ],
+    }
+))
+fig.update_layout(height=400)
+st.plotly_chart(fig, use_container_width=True)
+
+# --- INDIVIDUAL COMPONENT BREAKDOWN ---
+st.markdown(f"**Component Scores:** M({m_score}) | E({e_score}) | T({t_score}) | A({a_score}) | L({l_score})")
