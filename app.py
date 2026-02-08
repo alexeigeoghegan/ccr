@@ -1,82 +1,93 @@
 import streamlit as st
+import yfinance as yf
 import requests
-from bs4 import BeautifulSoup
+import pandas as pd
 
 # Page Configuration
 st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wide")
 
-# --- ROBUST DATA FETCHING ---
-def get_google_finance_price(ticker_path):
-    """
-    Fetches price from Google Finance using the ticker path 
-    (e.g., 'INDEXDXY:CURRENCY' or 'TMUBMUSD10Y:CURRENCY')
-    """
-    try:
-        url = f"https://www.google.com/finance/quote/{ticker_path}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Google Finance often stores the current price in a div with this class
-        price = soup.find("div", {"class": "YMlS7e"}).text
-        return price
-    except Exception:
-        return "N/A"
+# --- DATA FETCHING ---
 
-# Fetching Banner Data
-dxy = get_google_finance_price("INDEXDXY:CURRENCY")
-ten_y = get_google_finance_price("TMUBMUSD10Y:BIND_BMK")
-oil = get_google_finance_price("CLW00:NYMEX") # WTI Crude Futures
+@st.cache_data(ttl=300)  # Updates every 5 minutes
+def fetch_macro():
+    # Tickers: DXY (DX-Y.NYB), 10Y Yield (^TNX), WTI Crude (CL=F)
+    tickers = {"DXY": "DX-Y.NYB", "10Y": "^TNX", "Oil": "CL=F"}
+    data = {}
+    for name, symbol in tickers.items():
+        try:
+            ticker = yf.Ticker(symbol)
+            current_price = ticker.history(period="1d")['Close'].iloc[-1]
+            data[name] = round(current_price, 2)
+        except:
+            data[name] = "N/A"
+    return data
+
+def fetch_emotion():
+    try:
+        response = requests.get("https://api.alternative.me/fng/").json()
+        val = response['data'][0]['value']
+        status = response['data'][0]['value_classification']
+        return val, status
+    except:
+        return "N/A", "N/A"
+
+# Load Data
+macro_data = fetch_macro()
+fng_val, fng_status = fetch_emotion()
 
 # --- TOP BANNER ---
 st.markdown("### 🌍 Global Market Pulse")
-b1, b2, b3 = st.columns(3)
-
-with b1:
-    st.metric("Dollar Index (DXY)", dxy)
-with b2:
-    st.metric("US 10Y Yield", f"{ten_y}")
-with b3:
-    st.metric("WTI Crude Oil", f"{oil}")
+top1, top2, top3 = st.columns(3)
+with top1:
+    st.metric("Dollar Index (DXY)", macro_data["DXY"])
+with top2:
+    st.metric("US 10Y Yield", f"{macro_data['10Y']}%")
+with top3:
+    st.metric("WTI Crude Oil", f"${macro_data['Oil']}")
 
 st.markdown("---")
 
-# --- METAL CORE ---
-st.title("⚒️ METAL Dashboard")
-m1, m2, m3, m4, m5 = st.columns(5)
+# --- METAL DASHBOARD ---
+st.title("⚒️ METAL Cycle Risk Tracker")
 
-# Emotion (Fear & Greed)
-def get_fear_greed():
-    try:
-        data = requests.get("https://api.alternative.me/fng/").json()
-        return data['data'][0]['value'], data['data'][0]['value_classification']
-    except: return "N/A", "N/A"
+# Create 5 columns for M-E-T-A-L
+m, e, t, a, l = st.columns(5)
 
-fg_val, fg_label = get_fear_greed()
+with m:
+    st.header("M")
+    st.subheader("Macro")
+    st.write(f"DXY: **{macro_data['DXY']}**")
+    st.caption("DXY Up = Risk Off")
 
-with m1:
-    st.subheader("M")
-    st.write("**Macro**")
-    st.caption(f"DXY: {dxy}")
+with e:
+    st.header("E")
+    st.subheader("Emotion")
+    st.write(f"Score: **{fng_val}**")
+    st.write(f"*{fng_status}*")
 
-with m2:
-    st.subheader("E")
-    st.write("**Emotion**")
-    st.write(f"{fg_val} ({fg_label})")
+with t:
+    st.header("T")
+    st.subheader("Technicals")
+    st.link_button("View CBBI", "https://colintalkscrypto.com/cbbi/")
 
-with m3:
-    st.subheader("T")
-    st.write("**Technical**")
-    st.link_button("CBBI Index", "https://colintalkscrypto.com/cbbi/")
-
-with m4:
-    st.subheader("A")
-    st.write("**Adoption**")
+with a:
+    st.header("A")
+    st.subheader("Adoption")
     st.link_button("Power Law", "https://charts.bitbo.io/power-law-oscillator/")
 
-with m5:
-    st.subheader("L")
-    st.write("**Leverage**")
-    st.link_button("CDRI Risk", "https://www.coinglass.com/pro/i/CDRI")
+with l:
+    st.header("L")
+    st.subheader("Leverage")
+    st.link_button("CDRI Index", "https://www.coinglass.com/pro/i/CDRI")
 
-st.sidebar.info("Reference: Sell | Fifty Sell | 2 Anytime Alerts")
+# --- SIDEBAR & ALERTS ---
+st.sidebar.title("Alert Reference")
+st.sidebar.markdown("""
+- **Full Sell**: Maximum Risk Level
+- **Fifty Sell**: Mid-Level De-risking
+- **Anytime Alert 1**: Momentum Shift
+- **Anytime Alert 2**: Liquidation Risk
+""")
+
+st.sidebar.divider()
+st.sidebar.info("Dashboard updates every 5 minutes.")
