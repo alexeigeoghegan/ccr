@@ -8,8 +8,8 @@ from datetime import datetime
 # Page Configuration
 st.set_page_config(page_title="METAL Gauge", page_icon="⚒️", layout="wide")
 
-# Custom Neon Header Function
-def neon_header(text, size="h4"):
+# Custom Neon Header Function with Link Support
+def neon_header(text, size="h4", link=None):
     words = text.split()
     processed_words = []
     for word in words:
@@ -18,11 +18,16 @@ def neon_header(text, size="h4"):
             processed_words.append(highlighted)
     processed_text = " ".join(processed_words)
     processed_text = processed_text.replace("METAL", "<span style='color: #FF5F1F; text-shadow: 0 0 10px #FF5F1F;'>METAL</span>")
-    st.markdown(f"<{size} style='margin-bottom: 0px;'>{processed_text}</{size}>", unsafe_allow_html=True)
+    
+    if link:
+        html = f"<{size} style='margin-bottom: 0px;'><a href='{link}' target='_blank' style='text-decoration: none; color: inherit;'>{processed_text}</a></{size}>"
+    else:
+        html = f"<{size} style='margin-bottom: 0px;'>{processed_text}</{size}>"
+    
+    st.markdown(html, unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)
 def fetch_live_data():
-    # Adjusted tickers for 2026 context
     tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F", "BTC": "BTC-USD"}
     data = {}
     for name, sym in tickers.items():
@@ -46,7 +51,6 @@ live = fetch_live_data()
 st.markdown("<h1 style='text-align: center; color: white; margin-top: -30px;'>⚒️ <span style='color: #FF5F1F; text-shadow: 0 0 15px #FF5F1F;'>METAL</span> GAUGE</h1>", unsafe_allow_html=True)
 
 # --- 2. LAYOUT CONTAINERS ---
-# We define them in order but control the logic so data flows correctly
 gauge_container = st.container()
 input_container = st.container()
 
@@ -54,15 +58,20 @@ input_container = st.container()
 with input_container:
     st.markdown("---")
     
-    # HEADER ROW: Forces titles to be aligned horizontally
+    # HEADER ROW with requested links
     h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns(5)
-    with h_col1: neon_header("Macro")
-    with h_col2: neon_header("Emotion")
-    with h_col3: neon_header("Technicals")
-    with h_col4: neon_header("Adoption")
-    with h_col5: neon_header("Leverage")
+    with h_col1: 
+        neon_header("Macro")
+    with h_col2: 
+        neon_header("Emotion", link="https://alternative.me/crypto/fear-and-greed-index/")
+    with h_col3: 
+        neon_header("Technicals", link="https://colintalkscrypto.com/cbbi/")
+    with h_col4: 
+        neon_header("Adoption", link="https://charts.bitbo.io/power-law-oscillator/")
+    with h_col5: 
+        neon_header("Leverage", link="https://www.coinglass.com/pro/i/CDRI")
 
-    # CONTENT ROW: The actual interactive elements
+    # CONTENT ROW
     col_m, col_e, col_t, col_a, col_l = st.columns(5)
     
     with col_m:
@@ -96,14 +105,13 @@ with input_container:
         st.metric("Power Law", f"{osc_raw:.1f}")
 
     with col_l:
-        l_raw = st.slider("CDRI Visual Ref", 0, 100, 48, key="l_slider")
+        l_raw = st.slider("CDRI", 0, 100, 48, key="l_slider")
         st.link_button("View Source", "https://www.coinglass.com/pro/i/CDRI")
 
 # --- 4. GAUGE & OVERRIDES (TOP VISUALS) ---
 with gauge_container:
     _, center_col, _ = st.columns([1, 2, 1])
     with center_col:
-        # Final Calculation for the Gauge
         ov_cols = st.columns(5)
         m_score = ov_cols[0].number_input(f"M ({m_raw})", 0, 100, m_raw)
         e_score = ov_cols[1].number_input(f"E ({e_raw})", 0, 100, e_raw)
@@ -113,7 +121,6 @@ with gauge_container:
 
         final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
         
-        # Risk Logic
         if final_risk >= 70:
             color, label = "#FF0000", "HIGH RISK"
         elif final_risk <= 30:
@@ -131,15 +138,12 @@ with gauge_container:
         
         st.markdown("<p style='text-align: center; color: gray; font-size: 0.8em; text-transform: uppercase; margin-top: -20px;'>Manual Override Values</p>", unsafe_allow_html=True)
 
-# CSS for final visual polish and ordering
+# CSS for visual polish
 st.markdown("""
     <style>
-        /* Ensures the title stays at top, then Gauge, then Inputs */
         div[data-testid="stVerticalBlock"] > div:nth-child(1) { order: 1; } 
         div[data-testid="stVerticalBlock"] > div:nth-child(2) { order: 2; } 
         div[data-testid="stVerticalBlock"] > div:nth-child(3) { order: 3; }
-        
-        /* Reduce spacing between metrics and headers */
         [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
     </style>
 """, unsafe_allow_html=True)
