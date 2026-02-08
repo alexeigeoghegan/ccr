@@ -6,11 +6,13 @@ import numpy as np
 from datetime import datetime
 
 # Page Configuration
-st.set_page_config(page_title="METAL Index", page_icon="⚒️", layout="wide")
+st.set_page_config(page_title="METAL Gauge", page_icon="⚒️", layout="wide")
 
 # Custom Neon Header Function
-def neon_header(text):
-    st.markdown(f"<h4><span style='color: #FF5F1F; text-shadow: 0 0 5px #FF5F1F;'>{text[0]}</span>{text[1:]}</h4>", unsafe_allow_html=True)
+def neon_header(text, size="h4"):
+    # Apply neon orange branding to the whole word or just the 'METAL' part
+    processed_text = text.replace("METAL", "<span style='color: #FF5F1F; text-shadow: 0 0 10px #FF5F1F;'>METAL</span>")
+    st.markdown(f"<{size}>{processed_text}</{size}>", unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)
 def fetch_live_data():
@@ -24,11 +26,12 @@ def fetch_live_data():
                 data[f"{name}_mom"] = round(((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100, 2)
         except: data[f"{name}_mom"] = 0.0
     
-    # POWER LAW: Adjusted to match Bitbo's current fair value center
+    # POWER LAW: Adjusted for Bitbo consistency (1 decimal place display)
     days = (datetime.now() - datetime(2009, 1, 3)).days
     if "BTC_price" in data:
         expected_log = -17.015 + 5.82 * np.log10(days)
-        data["power_law_osc"] = round(np.log10(data["BTC_price"]) - expected_log, 3)
+        # We keep higher precision for math but round for display
+        data["power_law_osc"] = np.log10(data["BTC_price"]) - expected_log
     return data
 
 live = fetch_live_data()
@@ -40,11 +43,15 @@ try:
 except: e_score = 40
 t_score = 36 
 
-# --- TOP GAUGE ---
-st.title("⚒️ METAL Index")
-gauge_placeholder = st.empty()
+# --- 1. CENTERED GAUGE ---
+# Centering using columns
+_, center_col, _ = st.columns([1, 2, 1])
 
-# --- HORIZONTAL COLUMNS ---
+with center_col:
+    st.markdown("<h1 style='text-align: center; color: white;'>⚒️ <span style='color: #FF5F1F; text-shadow: 0 0 15px #FF5F1F;'>METAL</span> GAUGE</h1>", unsafe_allow_html=True)
+    gauge_placeholder = st.empty()
+
+# --- 2. HORIZONTAL COMPONENT COLUMNS ---
 st.markdown("---")
 col_m, col_e, col_t, col_a, col_l = st.columns(5)
 
@@ -70,26 +77,38 @@ with col_t:
 
 with col_a:
     neon_header("Adoption")
-    osc = live.get("power_law_osc", 0.48)
-    a_score = int(np.clip((osc + 1) * 50, 0, 100))
-    st.metric("Power Law", f"{osc}")
+    osc_raw = live.get("power_law_osc", 0.48)
+    a_score = int(np.clip((osc_raw + 1) * 50, 0, 100))
+    # Displaying to 1 decimal place
+    st.metric("Power Law", f"{osc_raw:.1f}")
     st.caption(f"Score: {a_score}")
 
 with col_l:
     neon_header("Leverage")
     l_score = st.slider("CDRI Value", 0, 100, 50)
-    st.link_button("View CDRI", "https://www.coinglass.com/pro/i/CDRI")
+    st.link_button("View CDRI Source", "https://www.coinglass.com/pro/i/CDRI")
 
-# --- RENDER GAUGE ---
+# --- 3. RENDER ENLARGED GAUGE ---
 final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
 color, label = ("#FF0000", "HIGH RISK") if final_risk >= 70 else (("#00FF00", "LOW RISK") if final_risk <= 30 else ("#007BFF", "MEDIUM RISK"))
 
 with gauge_placeholder.container():
     fig = go.Figure(go.Indicator(
         mode = "gauge+number", value = final_risk,
-        title = {'text': f"<b>{label}</b>", 'font': {'color': color, 'size': 26}},
-        gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': color}}
+        title = {'text': f"<b>{label}</b>", 'font': {'color': color, 'size': 32}},
+        gauge = {
+            'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "gray"},
+            'bar': {'color': color},
+            'bgcolor': "rgba(0,0,0,0)",
+            'borderwidth': 2,
+            'bordercolor': "gray",
+            'steps': [
+                {'range': [0, 30], 'color': "rgba(0, 255, 0, 0.1)"},
+                {'range': [70, 100], 'color': "rgba(255, 0, 0, 0.1)"}
+            ]
+        }
     ))
-    fig.update_layout(height=320, margin=dict(t=80, b=0, l=50, r=50))
+    # Increased height and adjusted margins for a "bigger" feel
+    fig.update_layout(height=450, margin=dict(t=100, b=0, l=50, r=50), paper_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig, use_container_width=True)
-    st.markdown(f"<p style='text-align:center; color:gray;'>M:{m_score} | E:{e_score} | T:{t_score} | A:{a_score} | L:{l_score}</p>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align:center; color:gray; letter-spacing: 2px;'>M:{m_score} | E:{e_score} | T:{t_score} | A:{a_score} | L:{l_score}</h3>", unsafe_allow_html=True)
