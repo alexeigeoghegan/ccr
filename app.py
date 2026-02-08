@@ -18,10 +18,11 @@ def neon_header(text, size="h4"):
             processed_words.append(highlighted)
     processed_text = " ".join(processed_words)
     processed_text = processed_text.replace("METAL", "<span style='color: #FF5F1F; text-shadow: 0 0 10px #FF5F1F;'>METAL</span>")
-    st.markdown(f"<{size}>{processed_text}</{size}>", unsafe_allow_html=True)
+    st.markdown(f"<{size} style='margin-bottom: 0px;'>{processed_text}</{size}>", unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)
 def fetch_live_data():
+    # Adjusted tickers for 2026 context
     tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F", "BTC": "BTC-USD"}
     data = {}
     for name, sym in tickers.items():
@@ -30,7 +31,9 @@ def fetch_live_data():
             if not df.empty:
                 data[f"{name}_price"] = df['Close'].iloc[-1]
                 data[f"{name}_mom"] = round(((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100, 2)
-        except: data[f"{name}_mom"] = 0.0
+        except: 
+            data[f"{name}_mom"] = 0.0
+            
     days = (datetime.now() - datetime(2009, 1, 3)).days
     if "BTC_price" in data:
         expected_log = -17.015 + 5.82 * np.log10(days)
@@ -39,19 +42,30 @@ def fetch_live_data():
 
 live = fetch_live_data()
 
-# --- 1. TITLE (VERY TOP) ---
-st.markdown("<h1 style='text-align: center; color: white; margin-top: -50px;'>⚒️ <span style='color: #FF5F1F; text-shadow: 0 0 15px #FF5F1F;'>METAL</span> GAUGE</h1>", unsafe_allow_html=True)
+# --- 1. MAIN TITLE ---
+st.markdown("<h1 style='text-align: center; color: white; margin-top: -30px;'>⚒️ <span style='color: #FF5F1F; text-shadow: 0 0 15px #FF5F1F;'>METAL</span> GAUGE</h1>", unsafe_allow_html=True)
 
-# --- 2. BOTTOM COMPONENT INPUTS (RUN FIRST TO FEED TOP) ---
-# We use st.container but display it later in the code to keep the UI flow
+# --- 2. LAYOUT CONTAINERS ---
+# We define them in order but control the logic so data flows correctly
+gauge_container = st.container()
 input_container = st.container()
 
+# --- 3. LOGIC & INPUTS (CALCULATION BLOCK) ---
 with input_container:
     st.markdown("---")
+    
+    # HEADER ROW: Forces titles to be aligned horizontally
+    h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns(5)
+    with h_col1: neon_header("Macro")
+    with h_col2: neon_header("Emotion")
+    with h_col3: neon_header("Technicals")
+    with h_col4: neon_header("Adoption")
+    with h_col5: neon_header("Leverage")
+
+    # CONTENT ROW: The actual interactive elements
     col_m, col_e, col_t, col_a, col_l = st.columns(5)
     
     with col_m:
-        neon_header("Macro")
         m2 = st.radio(f"M2 (Ref: 1.73%)", ["Higher", "Lower"], index=0, key="m2_r")
         fed = st.radio(f"Fed Net (Ref: -0.57%)", ["Higher", "Lower"], index=0, key="fed_r")
         dxy = st.radio(f"DXY ({live.get('DXY_mom', 0)}%)", ["Higher", "Lower"], index=1, key="dxy_r")
@@ -67,65 +81,65 @@ with input_container:
         m_raw = max(0, min(100, m_calc))
 
     with col_e:
-        neon_header("Emotion")
         try:
             e_raw = int(requests.get("https://api.alternative.me/fng/").json()['data'][0]['value'])
         except: e_raw = 40
         st.metric("Fear & Greed", e_raw)
 
     with col_t:
-        neon_header("Technicals")
         t_raw = 36 
         st.metric("CBBI Index", t_raw)
 
     with col_a:
-        neon_header("Adoption")
         osc_raw = live.get("power_law_osc", 0.4)
         a_raw = int(np.clip((osc_raw + 1) * 50, 0, 100))
         st.metric("Power Law", f"{osc_raw:.1f}")
 
     with col_l:
-        neon_header("Leverage")
-        # FIX: The slider value is now captured as l_raw to feed the top bracket
         l_raw = st.slider("CDRI Visual Ref", 0, 100, 48, key="l_slider")
         st.link_button("View Source", "https://www.coinglass.com/pro/i/CDRI")
 
-# --- 3. GAUGE & OVERRIDES (POSITIONED AT TOP) ---
-# We use the 'top' area placeholder to move these up
-top_visuals = st.container()
-
-with top_visuals:
-    # Use empty space to center the gauge
+# --- 4. GAUGE & OVERRIDES (TOP VISUALS) ---
+with gauge_container:
     _, center_col, _ = st.columns([1, 2, 1])
     with center_col:
-        gauge_target = st.empty()
-        st.markdown("<p style='text-align: center; color: gray; font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px;'>Manual Override</p>", unsafe_allow_html=True)
-        
+        # Final Calculation for the Gauge
         ov_cols = st.columns(5)
-        m_score = ov_cols[0].number_input(f"M ({m_raw})", 0, 100, 40)
-        e_score = ov_cols[1].number_input(f"E ({e_raw})", 0, 100, 7)
-        t_score = ov_cols[2].number_input(f"T ({t_raw})", 0, 100, 36)
-        a_score = ov_cols[3].number_input(f"A ({a_raw})", 0, 100, 38)
-        l_score = ov_cols[4].number_input(f"L ({l_raw})", 0, 100, 48)
+        m_score = ov_cols[0].number_input(f"M ({m_raw})", 0, 100, m_raw)
+        e_score = ov_cols[1].number_input(f"E ({e_raw})", 0, 100, e_raw)
+        t_score = ov_cols[2].number_input(f"T ({t_raw})", 0, 100, t_raw)
+        a_score = ov_cols[3].number_input(f"A ({a_raw})", 0, 100, a_raw)
+        l_score = ov_cols[4].number_input(f"L ({l_raw})", 0, 100, l_raw)
 
-# Render Gauge into the target placeholder (Top of page)
-final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
-color, label = ("#FF0000", "HIGH RISK") if final_risk >= 70 else (("#00FF00", "LOW RISK") if final_risk <= 30 else ("#007BFF", "MEDIUM RISK"))
+        final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
+        
+        # Risk Logic
+        if final_risk >= 70:
+            color, label = "#FF0000", "HIGH RISK"
+        elif final_risk <= 30:
+            color, label = "#00FF00", "LOW RISK"
+        else:
+            color, label = "#007BFF", "MEDIUM RISK"
 
-with gauge_target.container():
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number", value = final_risk,
-        title = {'text': f"<b>{label}</b>", 'font': {'color': color, 'size': 32}},
-        gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': color}}
-    ))
-    fig.update_layout(height=450, margin=dict(t=80, b=0, l=50, r=50), paper_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number", value = final_risk,
+            title = {'text': f"<b>{label}</b>", 'font': {'color': color, 'size': 32}},
+            gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': color}}
+        ))
+        fig.update_layout(height=400, margin=dict(t=50, b=0, l=50, r=50), paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.markdown("<p style='text-align: center; color: gray; font-size: 0.8em; text-transform: uppercase; margin-top: -20px;'>Manual Override Values</p>", unsafe_allow_html=True)
 
-# CSS to force positioning: Title -> Gauge -> Inputs -> Details
+# CSS for final visual polish and ordering
 st.markdown("""
     <style>
-        div[data-testid="stVerticalBlock"] > div:nth-child(1) { order: 1; } /* Title */
-        div[data-testid="stVerticalBlock"] > div:nth-child(3) { order: 2; } /* Gauge/Overrides */
-        div[data-testid="stVerticalBlock"] > div:nth-child(2) { order: 3; } /* Components */
+        /* Ensures the title stays at top, then Gauge, then Inputs */
+        div[data-testid="stVerticalBlock"] > div:nth-child(1) { order: 1; } 
+        div[data-testid="stVerticalBlock"] > div:nth-child(2) { order: 2; } 
+        div[data-testid="stVerticalBlock"] > div:nth-child(3) { order: 3; }
+        
+        /* Reduce spacing between metrics and headers */
+        [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
     </style>
 """, unsafe_allow_html=True)
