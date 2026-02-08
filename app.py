@@ -5,42 +5,47 @@ from bs4 import BeautifulSoup
 # Page Configuration
 st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wide")
 
-# --- DATA FETCHING FUNCTIONS ---
-
-def get_market_value(url, selector, attr=None):
-    """Helper to scrape specific values from market sites."""
+# --- ROBUST DATA FETCHING ---
+def get_google_finance_price(ticker_path):
+    """
+    Fetches price from Google Finance using the ticker path 
+    (e.g., 'INDEXDXY:CURRENCY' or 'TMUBMUSD10Y:CURRENCY')
+    """
     try:
+        url = f"https://www.google.com/finance/quote/{ticker_path}"
         headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=5)
+        response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
-        element = soup.select_one(selector)
-        return element.get(attr) if attr else element.text.strip()
-    except:
+        
+        # Google Finance often stores the current price in a div with this class
+        price = soup.find("div", {"class": "YMlS7e"}).text
+        return price
+    except Exception:
         return "N/A"
 
-# Fetching the specific values you requested
-dxy_val = get_market_value("https://www.marketwatch.com/investing/index/dxy", "bg-quote[field='Last']")
-ten_y_val = get_market_value("https://www.marketwatch.com/investing/bond/tmubmusd10y?countrycode=bx", "bg-quote[field='Last']")
-oil_val = get_market_value("https://www.marketwatch.com/investing/future/crude%20oil%20-%20electronic", "bg-quote[field='Last']")
+# Fetching Banner Data
+dxy = get_google_finance_price("INDEXDXY:CURRENCY")
+ten_y = get_google_finance_price("TMUBMUSD10Y:BIND_BMK")
+oil = get_google_finance_price("CLW00:NYMEX") # WTI Crude Futures
 
-# --- TOP BANNER (Macro Indicators) ---
+# --- TOP BANNER ---
 st.markdown("### 🌍 Global Market Pulse")
 b1, b2, b3 = st.columns(3)
 
 with b1:
-    st.metric("Dollar Index (DXY)", f"{dxy_val}")
+    st.metric("Dollar Index (DXY)", dxy)
 with b2:
-    st.metric("US 10Y Yield", f"{ten_y_val}%")
+    st.metric("US 10Y Yield", f"{ten_y}")
 with b3:
-    st.metric("WTI Crude Oil", f"${oil_val}")
+    st.metric("WTI Crude Oil", f"{oil}")
 
 st.markdown("---")
 
-# --- METAL CORE DASHBOARD ---
+# --- METAL CORE ---
 st.title("⚒️ METAL Dashboard")
 m1, m2, m3, m4, m5 = st.columns(5)
 
-# (Reusing Fear & Greed API for the Emotion section)
+# Emotion (Fear & Greed)
 def get_fear_greed():
     try:
         data = requests.get("https://api.alternative.me/fng/").json()
@@ -52,31 +57,26 @@ fg_val, fg_label = get_fear_greed()
 with m1:
     st.subheader("M")
     st.write("**Macro**")
-    st.caption(f"DXY: {dxy_val}")
+    st.caption(f"DXY: {dxy}")
 
 with m2:
     st.subheader("E")
-    st.write(f"**Emotion**")
+    st.write("**Emotion**")
     st.write(f"{fg_val} ({fg_label})")
 
 with m3:
     st.subheader("T")
     st.write("**Technical**")
-    st.caption("CBBI Score")
+    st.link_button("CBBI Index", "https://colintalkscrypto.com/cbbi/")
 
 with m4:
     st.subheader("A")
     st.write("**Adoption**")
-    st.caption("Power Law")
+    st.link_button("Power Law", "https://charts.bitbo.io/power-law-oscillator/")
 
 with m5:
     st.subheader("L")
     st.write("**Leverage**")
-    st.caption("CDRI Risk")
+    st.link_button("CDRI Risk", "https://www.coinglass.com/pro/i/CDRI")
 
-st.markdown("---")
-# Quick Links for Verification
-st.sidebar.markdown("### Quick Sources")
-st.sidebar.page_link("https://www.marketwatch.com/investing/index/dxy", label="DXY Chart")
-st.sidebar.page_link("https://www.marketwatch.com/investing/bond/tmubmusd10y", label="US 10Y Chart")
-st.sidebar.page_link("https://alternative.me/crypto/fear-and-greed-index/", label="Fear & Greed Index")
+st.sidebar.info("Reference: Sell | Fifty Sell | 2 Anytime Alerts")
