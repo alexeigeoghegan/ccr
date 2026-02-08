@@ -5,55 +5,34 @@ import requests
 # Page Configuration
 st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wide")
 
-# --- IMPROVED DATA FETCHING ---
-
+# --- DATA FETCHING ---
 @st.cache_data(ttl=300)
-def get_live_price(ticker_list):
-    """Try a list of tickers and return the first valid price found."""
-    for symbol in ticker_list:
+def fetch_macro():
+    # Using the specific March 2026 Future Ticker for DXY accuracy
+    tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F"}
+    data = {}
+    for name, sym in tickers.items():
         try:
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(period="1d")
-            if not df.empty:
-                return round(df['Close'].iloc[-1], 2)
-        except:
-            continue
-    return "N/A"
+            df = yf.Ticker(sym).history(period="5d")
+            data[name] = round(df['Close'].iloc[-1], 2) if not df.empty else "N/A"
+        except: data[name] = "N/A"
+    return data
 
-def fetch_all_data():
-    # DXY fallbacks: DX-Y.NYB, DXY, UUP (ETF proxy)
-    dxy = get_live_price(["DX-Y.NYB", "DXY", "UUP"])
-    
-    # 10Y Yield: ^TNX is usually very stable
-    ten_y = get_live_price(["^TNX"])
-    
-    # Oil fallbacks: CL=F (Front month), CLH26 (March 26), USO (ETF proxy)
-    oil = get_live_price(["CL=F", "CLH26", "USO"])
-    
-    return {"DXY": dxy, "10Y": ten_y, "Oil": oil}
-
-def get_fear_greed():
+def fetch_emotion():
     try:
         r = requests.get("https://api.alternative.me/fng/").json()
         return r['data'][0]['value'], r['data'][0]['value_classification']
-    except:
-        return "N/A", "N/A"
+    except: return "N/A", "N/A"
 
-# Load Data
-macro = fetch_all_data()
-fng_val, fng_label = get_fear_greed()
+macro = fetch_macro()
+f_val, f_label = fetch_emotion()
 
 # --- TOP BANNER ---
 st.markdown("### 🌍 Global Market Pulse")
-b1, b2, b3 = st.columns(3)
-
-with b1:
-    st.metric("Dollar Index (DXY)", f"{macro['DXY']}")
-with b2:
-    st.metric("US 10Y Yield", f"{macro['10Y']}%" if macro['10Y'] != "N/A" else "N/A")
-with b3:
-    st.metric("WTI Crude Oil", f"${macro['Oil']}" if macro['Oil'] != "N/A" else "N/A")
-
+c1, c2, c3 = st.columns(3)
+c1.metric("Dollar Index (DXY)", macro['DXY'])
+c2.metric("US 10Y Yield", f"{macro['10Y']}%")
+c3.metric("WTI Crude Oil", f"${macro['Oil']}")
 st.markdown("---")
 
 # --- METAL CORE ---
@@ -62,31 +41,40 @@ m, e, t, a, l = st.columns(5)
 
 with m:
     st.header("M")
-    st.subheader("Macro")
-    st.write(f"DXY: **{macro['DXY']}**")
-    st.caption("High DXY = Pressure on Crypto")
+    st.write("**Macro**")
+    st.info(f"DXY: {macro['DXY']}")
 
 with e:
     st.header("E")
-    st.subheader("Emotion")
-    st.write(f"Score: **{fng_val}**")
-    st.caption(fng_label)
+    st.write("**Emotion**")
+    st.success(f"{f_val} ({f_label})")
 
 with t:
     st.header("T")
-    st.subheader("Technicals")
-    st.link_button("CBBI Index", "https://colintalkscrypto.com/cbbi/")
+    st.write("**Technicals**")
+    st.link_button("Check CBBI Score", "https://colintalkscrypto.com/cbbi/")
 
 with a:
     st.header("A")
-    st.subheader("Adoption")
-    st.link_button("Power Law", "https://charts.bitbo.io/power-law-oscillator/")
+    st.write("**Adoption**")
+    st.link_button("Check Power Law", "https://charts.bitbo.io/power-law-oscillator/")
 
 with l:
     st.header("L")
     st.subheader("Leverage")
-    st.link_button("CDRI Index", "https://www.coinglass.com/pro/i/CDRI")
+    st.link_button("Check CDRI Risk", "https://www.coinglass.com/pro/i/CDRI")
 
-# Sidebar for alerts
-st.sidebar.title("METAL Alerts")
+# --- MANUAL INPUT (Sidebar) ---
+st.sidebar.title("Update Dashboard")
+st.sidebar.write("Input values from sources above:")
+manual_t = st.sidebar.number_input("T (CBBI Score)", 0, 100, 36)
+manual_a = st.sidebar.number_input("A (Power Law %)", -1.0, 1.0, 0.0)
+manual_l = st.sidebar.select_slider("L (Leverage Risk)", ["Low", "Neutral", "High", "Extreme"])
+
+# Displaying Manual Values in the Main UI
+with t: st.metric("Live Log", manual_t)
+with a: st.metric("Live Log", manual_a)
+with l: st.metric("Live Log", manual_l)
+
+st.sidebar.divider()
 st.sidebar.info("Reference: Sell | Fifty Sell | 2 Anytime Alerts")
