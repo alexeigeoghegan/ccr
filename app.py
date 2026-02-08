@@ -8,7 +8,7 @@ st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wid
 # --- DATA FETCHING ---
 @st.cache_data(ttl=300)
 def fetch_live_data():
-    # Tickers for Momentum (DXY 2026, 10Y, Oil)
+    # Tickers for Momentum
     tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F"}
     data = {}
     for name, sym in tickers.items():
@@ -25,72 +25,81 @@ def fetch_live_data():
     try:
         e_req = requests.get("https://api.alternative.me/fng/").json()
         data["e_score"] = int(e_req['data'][0]['value'])
-    except: data["e_score"] = 50
+    except: data["e_score"] = 7 # Feb 2026 Extreme Fear levels
 
     # Mocking Liquidity (Baseline for Feb 2026)
     data["m2_mom"] = 1.73  
     data["fed_mom"] = -0.57
-    
-    # Technicals (CBBI) - As per request, fixed to retrieved 2026 levels (~36)
     data["t_score"] = 36 
     
     return data
 
 live = fetch_live_data()
 
-# --- TOP BANNER: MOMENTUM CHANGES ---
-st.markdown("### 🌍 Global Market Momentum (Impact on M)")
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("Global M2", f"{live['m2_mom']}%", "MoM Delta")
-m2.metric("Fed Net Liq", f"{live['fed_mom']}%", "MoM Delta")
-m3.metric("DXY", f"{live['DXY_mom']}%", "MoM Delta")
-m4.metric("WTI Oil", f"{live['Oil_mom']}%", "MoM Delta")
-m5.metric("10Y Yield", f"{live['10Y_mom']}%", "MoM Delta")
-st.markdown("---")
+# --- CALCULATIONS ---
+# Macro Score (M)
+m_calc = 50 + (live['m2_mom'] * 2) + (live['fed_mom'] * 2) - (live['DXY_mom']) - (live['Oil_mom'] * 2) - (live['10Y_mom'])
+m_score = int(max(0, min(100, m_calc)))
 
-# --- METAL CORE ---
+# Adoption Score (A)
+# We keep the slider for the raw -1 to +1 input
+st.sidebar.title("Manual Overwrites")
+raw_a = st.sidebar.slider("Adoption: Power Law (-1 to +1)", -1.0, 1.0, 0.48, step=0.01)
+a_score = int((raw_a + 1) * 50)
+
+# Leverage Score (L)
+l_score = st.sidebar.slider("Leverage: CDRI Value (0-100)", 0, 100, 50)
+
+# Total Risk (Rounded to 0 decimal places)
+metal_risk = round((m_score + live['e_score'] + live['t_score'] + a_score + l_score) / 5)
+
+# --- UI DISPLAY ---
 st.title("⚒️ METAL Cycle Risk Tracker")
 col_m, col_e, col_t, col_a, col_l = st.columns(5)
 
-# M - MACRO (Impact based on direction)
+# M - MACRO
 with col_m:
-    st.header("M")
-    # Base 50, Adjusted by MoM impacts (simplified logic)
-    m_calc = 50 + (live['m2_mom'] * 2) + (live['fed_mom'] * 2) - (live['DXY_mom']) - (live['Oil_mom'] * 2) - (live['10Y_mom'])
-    m_score = int(max(0, min(100, m_calc)))
-    st.metric("Macro Score", m_score)
-    st.caption("Derived from MoM Momentum")
+    st.header(f"M ({m_score})")
+    st.write("**Macro Momentum**")
+    st.write(f"• Global M2: `{live['m2_mom']}%`")
+    st.write(f"• Fed Net: `{live['fed_mom']}%`")
+    st.write(f"• DXY: `{live['DXY_mom']}%`")
+    st.write(f"• Oil: `{live['Oil_mom']}%`")
+    st.write(f"• 10Y Yield: `{live['10Y_mom']}%`")
+    st.caption("Weight: 20%")
 
 # E - EMOTION
 with col_e:
-    st.header("E")
-    st.metric("Emotion Score", live['e_score'])
-    st.caption("Fear & Greed Index")
+    st.header(f"E ({live['e_score']})")
+    st.write("**Fear & Greed**")
+    st.metric("Sentiment", live['e_score'])
+    st.caption("Weight: 20%")
 
-# T - TECHNICALS (CBBI)
+# T - TECHNICALS
 with col_t:
-    st.header("T")
-    st.metric("CBBI Score", live['t_score'])
-    st.caption("Retrieved Technical Value")
+    st.header(f"T ({live['t_score']})")
+    st.write("**CBBI Index**")
+    st.metric("Index Level", live['t_score'])
+    st.caption("Weight: 20%")
 
-# A - ADOPTION (Power Law)
+# A - ADOPTION
 with col_a:
-    st.header("A")
-    raw_a = st.slider("Power Law (-1 to +1)", -1.0, 1.0, 0.48, step=0.01)
-    a_score = int((raw_a + 1) * 50)
-    st.metric("Adoption Score", a_score)
-    st.caption("[Power Law Chart](https://charts.bitbo.io/power-law-oscillator/)")
+    st.header(f"A ({a_score})")
+    st.write("**Power Law**")
+    st.metric("Score", a_score)
+    st.link_button("View Chart", "https://charts.bitbo.io/power-law-oscillator/")
+    st.caption("Weight: 20%")
 
-# L - LEVERAGE (CDRI)
+# L - LEVERAGE
 with col_l:
-    st.header("L")
-    l_score = st.slider("CDRI Value (0-100)", 0, 100, 50)
-    st.metric("Leverage Score", l_score)
-    st.caption("[Coinglass CDRI Link](https://www.coinglass.com/pro/i/CDRI)")
+    st.header(f"L ({l_score})")
+    st.write("**CDRI Risk**")
+    st.metric("Leverage", l_score)
+    st.link_button("View CDRI", "https://www.coinglass.com/pro/i/CDRI")
+    st.caption("Weight: 20%")
 
-# --- TOTAL RISK CALCULATION ---
+# --- FINAL RISK BAR ---
 st.markdown("---")
-metal_risk = round((m_score + live['e_score'] + live['t_score'] + a_score + l_score) / 5)
 
 if metal_risk >= 70:
     color, label = "red", "HIGH RISK"
@@ -101,11 +110,11 @@ else:
 
 st.subheader(f"Combined METAL Risk Score: {metal_risk}")
 
-# Styling the Progress Bar and Label
+# Styling
 st.markdown(f"""
     <style>
         .stProgress > div > div > div > div {{ background-color: {color}; }}
-        .risk-text {{ color: {color}; text-align: center; font-weight: bold; font-size: 24px; }}
+        .risk-text {{ color: {color}; text-align: center; font-weight: bold; font-size: 28px; }}
     </style>
     <div class="risk-text">{label}</div>
     """, unsafe_allow_html=True)
