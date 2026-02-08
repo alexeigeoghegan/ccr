@@ -7,20 +7,13 @@ import requests
 st.set_page_config(page_title="METAL Index", page_icon="⚒️", layout="wide")
 
 # Custom Neon Header Function
-def neon_header(text, score):
+def neon_header(text):
     first_letter = text[0]
     rest_of_word = text[1:]
-    st.markdown(f"""
-        <h3>
-            <span style='color: #FF5F1F; text-shadow: 0 0 5px #FF5F1F, 0 0 10px #FF5F1F;'>{first_letter}</span>{rest_of_word} 
-            <span style='font-size: 18px; color: gray;'>({score})</span>
-        </h3>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<h3><span style='color: #FF5F1F; text-shadow: 0 0 5px #FF5F1F;'>{first_letter}</span>{rest_of_word}</h3>", unsafe_allow_html=True)
 
-# --- DATA FETCHING ---
 @st.cache_data(ttl=300)
 def fetch_live_macro():
-    # Tickers for 2026: DXY Future, 10Y Yield, Oil
     tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F"}
     data = {}
     for name, sym in tickers.items():
@@ -35,68 +28,71 @@ def fetch_live_macro():
 
 live = fetch_live_macro()
 
-st.title("⚒️ METAL Index")
-
-# --- M: MACRO MOMENTUM LOGIC ---
+# --- M: MACRO (POINTS SYSTEM) ---
 st.markdown("---")
-neon_header("Macro", 0) # Score updated below
+neon_header("Macro")
 m_cols = st.columns(5)
+m_points = 50  # Starting Base
 
-m_base = 50
 with m_cols[0]:
-    m2_choice = st.radio("Global M2 MoM", ["Lower", "Higher"], index=1, horizontal=True)
-    m_base += 10 if m2_choice == "Higher" else 0
-    st.caption("Threshold: > -15")
+    m2_choice = st.radio(f"Global M2 ({live.get('m2_mom', 1.73)}%)", ["Lower", "Higher"], index=1, horizontal=True)
+    m_points += 10 if m2_choice == "Higher" else 0
+    st.caption("Pts: +10 if > -15%")
+
 with m_cols[1]:
-    fed_choice = st.radio("Fed Net MoM", ["Lower", "Higher"], index=1, horizontal=True)
-    m_base += 10 if fed_choice == "Higher" else 0
-    st.caption("Threshold: > -7")
+    fed_choice = st.radio(f"Fed Net ({live.get('fed_mom', -0.57)}%)", ["Lower", "Higher"], index=1, horizontal=True)
+    m_points += 10 if fed_choice == "Higher" else 0
+    st.caption("Pts: +10 if > -7%")
+
 with m_cols[2]:
-    dxy_choice = st.radio("DXY MoM", ["Lower", "Higher"], index=0, horizontal=True)
-    m_base -= 15 if dxy_choice == "Higher" else 0
-    st.caption("Threshold: +15")
+    dxy_choice = st.radio(f"DXY ({live['DXY_mom']}%)", ["Lower", "Higher"], index=0, horizontal=True)
+    m_points -= 15 if dxy_choice == "Higher" else 0
+    st.caption("Pts: -15 if > +15%")
+
 with m_cols[3]:
-    oil_choice = st.radio("Oil MoM", ["Lower", "Higher"], index=0, horizontal=True)
-    m_base -= 10 if oil_choice == "Higher" else 0
-    st.caption("Threshold: +3")
+    oil_choice = st.radio(f"Oil ({live['Oil_mom']}%)", ["Lower", "Higher"], index=0, horizontal=True)
+    m_points -= 10 if oil_choice == "Higher" else 0
+    st.caption("Pts: -10 if > +3%")
+
 with m_cols[4]:
-    teny_choice = st.radio("10Y MoM", ["Lower", "Higher"], index=0, horizontal=True)
-    m_base -= 15 if teny_choice == "Higher" else 0
-    st.caption("Threshold: +10")
+    teny_choice = st.radio(f"10Y Yield ({live['10Y_mom']}%)", ["Lower", "Higher"], index=0, horizontal=True)
+    m_points -= 15 if teny_choice == "Higher" else 0
+    st.caption("Pts: -15 if > +10%")
 
-m_score = int(max(0, min(100, m_base)))
+m_score = max(0, min(100, m_points))
 
-# --- OTHER COMPONENTS ---
+# --- E, T, A, L COMPONENTS ---
 st.markdown("---")
 c_e, c_t, c_a, c_l = st.columns(4)
 
 with c_e:
+    neon_header("Emotion")
     try:
         e_req = requests.get("https://api.alternative.me/fng/").json()
         e_score = int(e_req['data'][0]['value'])
     except: e_score = 7
-    neon_header("Emotion", e_score)
     st.metric("Fear & Greed", e_score)
 
 with c_t:
-    t_score = 36 # Retreived CBBI 2026 value
-    neon_header("Technicals", t_score)
+    neon_header("Technicals")
+    t_score = 36 # Fixed CBBI value
     st.metric("CBBI Index", t_score)
 
 with c_a:
-    neon_header("Adoption", 0)
-    raw_a = st.slider("Power Law (-1 to +1)", -1.0, 1.0, 0.48, step=0.01)
+    neon_header("Adoption")
+    raw_a = st.slider("Power Law Oscillator", -1.0, 1.0, 0.48, step=0.01)
     a_score = int((raw_a + 1) * 50)
-    st.caption("[View Chart](https://charts.bitbo.io/power-law-oscillator/)")
+    st.caption(f"Score: {a_score}")
 
 with c_l:
-    neon_header("Leverage", 0)
-    l_score = st.slider("CDRI (0-100)", 0, 100, 50)
-    st.caption("[View CDRI](https://www.coinglass.com/pro/i/CDRI/)")
+    neon_header("Leverage")
+    l_score = st.slider("CDRI Risk Value", 0, 100, 50)
+    st.caption(f"Score: {l_score}")
 
-# --- FINAL GAUGE ---
+# --- FINAL GAUGE WITH COMPONENT SCORES ---
 final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
 
+# Gauge Color Logic
 if final_risk >= 70: color, label = "#FF0000", "HIGH RISK"
 elif final_risk <= 30: color, label = "#00FF00", "LOW RISK"
 else: color, label = "#007BFF", "MEDIUM RISK"
@@ -104,7 +100,7 @@ else: color, label = "#007BFF", "MEDIUM RISK"
 fig = go.Figure(go.Indicator(
     mode = "gauge+number",
     value = final_risk,
-    title = {'text': f"<b>{label}</b>", 'font': {'color': color, 'size': 24}},
+    title = {'text': f"<b>{label}</b><br><span style='font-size:0.6em;color:gray'>M:{m_score} | E:{e_score} | T:{t_score} | A:{a_score} | L:{l_score}</span>", 'font': {'color': color, 'size': 24}},
     gauge = {
         'axis': {'range': [0, 100]},
         'bar': {'color': color},
@@ -115,4 +111,5 @@ fig = go.Figure(go.Indicator(
         ]
     }
 ))
+fig.update_layout(margin=dict(t=80, b=20))
 st.plotly_chart(fig, use_container_width=True)
