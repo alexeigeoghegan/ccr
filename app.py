@@ -7,8 +7,8 @@ st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wid
 
 # --- DATA FETCHING ---
 @st.cache_data(ttl=300)
-def fetch_macro_metrics():
-    # Tickers: DXY (March 26 Future), 10Y Yield, Oil
+def fetch_live_data():
+    # Tickers for Momentum (DXY 2026, 10Y, Oil)
     tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F"}
     data = {}
     for name, sym in tickers.items():
@@ -17,99 +17,96 @@ def fetch_macro_metrics():
             if not df.empty:
                 curr = df['Close'].iloc[-1]
                 prev = df['Close'].iloc[0]
-                data[f"{name}_val"] = round(curr, 2)
                 data[f"{name}_mom"] = round(((curr - prev) / prev) * 100, 2)
-            else: data[f"{name}_val"], data[f"{name}_mom"] = "N/A", 0.0
-        except: data[f"{name}_val"], data[f"{name}_mom"] = "N/A", 0.0
+            else: data[f"{name}_mom"] = 0.0
+        except: data[f"{name}_mom"] = 0.0
+    
+    # Fear & Greed API
+    try:
+        e_req = requests.get("https://api.alternative.me/fng/").json()
+        data["e_score"] = int(e_req['data'][0]['value'])
+    except: data["e_score"] = 50
+
+    # Mocking Liquidity (Baseline for Feb 2026)
+    data["m2_mom"] = 1.73  
+    data["fed_mom"] = -0.57
+    
+    # Technicals (CBBI) - As per request, fixed to retrieved 2026 levels (~36)
+    data["t_score"] = 36 
+    
     return data
 
-# Mocking Liquidity MoM (Requires manual check or FRED API for Global M2)
-m2_val, fed_val = 2.4, -1.2 
+live = fetch_live_data()
 
-# Load Data
-macro = fetch_macro_metrics()
-
-# --- TOP BANNER: GLOBAL MARKET PULSE ---
-st.markdown("### 🌍 Global Market Pulse")
-b1, b2, b3, b4, b5 = st.columns(5)
-
-b1.metric("Global M2 MoM", f"{m2_val}%", delta="-15% Threshold")
-b2.metric("Fed Net MoM", f"{fed_val}%", delta="-7% Threshold")
-b3.metric("DXY", f"{macro['DXY_val']}", delta=f"{macro['DXY_mom']}% MoM")
-b4.metric("WTI Oil", f"${macro['Oil_val']}", delta=f"{macro['Oil_mom']}% MoM")
-b5.metric("10Y Yield", f"{macro['10Y_val']}%", delta=f"{macro['10Y_mom']}% MoM")
+# --- TOP BANNER: MOMENTUM CHANGES ---
+st.markdown("### 🌍 Global Market Momentum (Impact on M)")
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric("Global M2", f"{live['m2_mom']}%", "MoM Delta")
+m2.metric("Fed Net Liq", f"{live['fed_mom']}%", "MoM Delta")
+m3.metric("DXY", f"{live['DXY_mom']}%", "MoM Delta")
+m4.metric("WTI Oil", f"{live['Oil_mom']}%", "MoM Delta")
+m5.metric("10Y Yield", f"{live['10Y_mom']}%", "MoM Delta")
 st.markdown("---")
 
 # --- METAL CORE ---
 st.title("⚒️ METAL Cycle Risk Tracker")
 col_m, col_e, col_t, col_a, col_l = st.columns(5)
 
-# M - Macro Oscillator Calculation
+# M - MACRO (Impact based on direction)
 with col_m:
     st.header("M")
-    m_base = 50
-    if m2_val > -15: m_base += 10
-    if fed_val > -7: m_base += 10
-    if macro['DXY_mom'] > 15: m_base -= 15
-    if macro['Oil_mom'] > 3: m_base -= 10
-    if macro['10Y_mom'] > 10: m_base -= 15
-    m_score = max(0, min(100, m_base))
+    # Base 50, Adjusted by MoM impacts (simplified logic)
+    m_calc = 50 + (live['m2_mom'] * 2) + (live['fed_mom'] * 2) - (live['DXY_mom']) - (live['Oil_mom'] * 2) - (live['10Y_mom'])
+    m_score = int(max(0, min(100, m_calc)))
     st.metric("Macro Score", m_score)
+    st.caption("Derived from MoM Momentum")
 
-# E - Emotion (Fear & Greed API)
+# E - EMOTION
 with col_e:
     st.header("E")
-    try:
-        e_data = requests.get("https://api.alternative.me/fng/").json()
-        e_score = int(e_data['data'][0]['value'])
-    except: e_score = 50
-    st.metric("Emotion Score", e_score)
+    st.metric("Emotion Score", live['e_score'])
+    st.caption("Fear & Greed Index")
 
-# T - Technicals (CBBI Override)
+# T - TECHNICALS (CBBI)
 with col_t:
     st.header("T")
-    t_score = st.number_input("CBBI Score", 0, 100, 36)
-    st.caption("[CBBI Link](https://colintalkscrypto.com/cbbi/)")
+    st.metric("CBBI Score", live['t_score'])
+    st.caption("Retrieved Technical Value")
 
-# A - Adoption (Power Law Logic)
+# A - ADOPTION (Power Law)
 with col_a:
     st.header("A")
-    raw_a = st.slider("Power Law (-1 to +1)", -1.0, 1.0, 0.0, step=0.1)
-    # Calculation: (Value + 1) * 50
+    raw_a = st.slider("Power Law (-1 to +1)", -1.0, 1.0, 0.48, step=0.01)
     a_score = int((raw_a + 1) * 50)
     st.metric("Adoption Score", a_score)
+    st.caption("[Power Law Chart](https://charts.bitbo.io/power-law-oscillator/)")
 
-# L - Leverage (CDRI Override)
+# L - LEVERAGE (CDRI)
 with col_l:
     st.header("L")
-    l_score = st.slider("Leverage (CDRI)", 0, 100, 50)
-    st.caption("[Coinglass Link](https://www.coinglass.com/pro/i/CDRI)")
+    l_score = st.slider("CDRI Value (0-100)", 0, 100, 50)
+    st.metric("Leverage Score", l_score)
+    st.caption("[Coinglass CDRI Link](https://www.coinglass.com/pro/i/CDRI)")
 
-# --- FINAL RISK CALCULATION ---
+# --- TOTAL RISK CALCULATION ---
 st.markdown("---")
-# Equal Weighting (20% each)
-metal_risk = (m_score + e_score + t_score + a_score + l_score) / 5
+metal_risk = round((m_score + live['e_score'] + live['t_score'] + a_score + l_score) / 5)
 
-# Color Coordination Logic
 if metal_risk >= 70:
-    color = "red"
-    label = "HIGH RISK"
+    color, label = "red", "HIGH RISK"
 elif metal_risk <= 30:
-    color = "green"
-    label = "LOW RISK"
+    color, label = "green", "LOW RISK"
 else:
-    color = "#007BFF" # Blue
-    label = "MEDIUM RISK"
+    color, label = "#007BFF", "MEDIUM RISK"
 
-st.subheader(f"Combined METAL Risk Score: {metal_risk:.1f}")
+st.subheader(f"Combined METAL Risk Score: {metal_risk}")
 
-# CSS for custom progress bar colors
+# Styling the Progress Bar and Label
 st.markdown(f"""
     <style>
-        .stProgress > div > div > div > div {{
-            background-color: {color};
-        }}
-    </style>""", unsafe_allow_html=True)
-
+        .stProgress > div > div > div > div {{ background-color: {color}; }}
+        .risk-text {{ color: {color}; text-align: center; font-weight: bold; font-size: 24px; }}
+    </style>
+    <div class="risk-text">{label}</div>
+    """, unsafe_allow_html=True)
 st.progress(metal_risk / 100)
-st.markdown(f"<h3 style='color:{color}; text-align:center;'>{label}</h3>", unsafe_allow_html=True)
