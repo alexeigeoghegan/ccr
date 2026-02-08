@@ -53,7 +53,7 @@ input_container = st.container()
 with input_container:
     st.markdown("---")
     
-    # HEADER ROW: Forces titles to be aligned horizontally
+    # HEADER ROW
     h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns(5)
     with h_col1: neon_header("Macro")
     with h_col2: neon_header("Emotion")
@@ -61,22 +61,23 @@ with input_container:
     with h_col4: neon_header("Adoption")
     with h_col5: neon_header("Leverage")
 
-    # CONTENT ROW: The actual interactive elements
+    # CONTENT ROW
     col_m, col_e, col_t, col_a, col_l = st.columns(5)
     
     with col_m:
+        # Reordered as requested: M2 -> Fed Net -> DXY -> 10Y -> Oil
         m2 = st.radio(f"M2 (Ref: 1.73%)", ["Higher", "Lower"], index=0, key="m2_r")
         fed = st.radio(f"Fed Net (Ref: -0.57%)", ["Higher", "Lower"], index=0, key="fed_r")
         dxy = st.radio(f"DXY ({live.get('DXY_mom', 0)}%)", ["Higher", "Lower"], index=1, key="dxy_r")
-        oil = st.radio(f"Oil ({live.get('Oil_mom', 0)}%)", ["Higher", "Lower"], index=1, key="oil_r")
         teny = st.radio(f"10Y ({live.get('10Y_mom', 0)}%)", ["Higher", "Lower"], index=1, key="teny_r")
+        oil = st.radio(f"Oil ({live.get('Oil_mom', 0)}%)", ["Higher", "Lower"], index=1, key="oil_r")
         
         m_calc = 50 
         m_calc += (-15 if m2 == "Higher" else 15)
         m_calc += (-7 if fed == "Higher" else 7)
         m_calc += (15 if dxy == "Higher" else -15)
+        m_calc += (-10 if teny == "Higher" else 10)
         m_calc += (3 if oil == "Higher" else -3)
-        m_calc += (10 if teny == "Higher" else -10)
         m_raw = max(0, min(100, m_calc))
 
     with col_e:
@@ -102,7 +103,6 @@ with input_container:
 with gauge_container:
     _, center_col, _ = st.columns([1, 2, 1])
     with center_col:
-        # Final Calculation for the Gauge
         ov_cols = st.columns(5)
         m_score = ov_cols[0].number_input(f"M ({m_raw})", 0, 100, m_raw)
         e_score = ov_cols[1].number_input(f"E ({e_raw})", 0, 100, e_raw)
@@ -112,7 +112,6 @@ with gauge_container:
 
         final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
         
-        # Risk Logic
         if final_risk >= 70:
             color, label = "#FF0000", "HIGH RISK"
         elif final_risk <= 30:
@@ -128,15 +127,12 @@ with gauge_container:
         fig.update_layout(height=400, margin=dict(t=50, b=0, l=50, r=50), paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
-# CSS for final visual polish and ordering
+# CSS for visual polish
 st.markdown("""
     <style>
-        /* Ensures the title stays at top, then Gauge, then Inputs */
         div[data-testid="stVerticalBlock"] > div:nth-child(1) { order: 1; } 
         div[data-testid="stVerticalBlock"] > div:nth-child(2) { order: 2; } 
         div[data-testid="stVerticalBlock"] > div:nth-child(3) { order: 3; }
-        
-        /* Reduce spacing between metrics and headers */
         [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
     </style>
 """, unsafe_allow_html=True)
