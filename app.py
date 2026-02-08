@@ -8,11 +8,10 @@ st.set_page_config(page_title="METAL Index", page_icon="⚒️", layout="wide")
 
 # Custom Neon Header Function
 def neon_header(text):
-    st.markdown(f"<h3><span style='color: #FF5F1F; text-shadow: 0 0 5px #FF5F1F;'>{text[0]}</span>{text[1:]}</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h4><span style='color: #FF5F1F; text-shadow: 0 0 5px #FF5F1F;'>{text[0]}</span>{text[1:]}</h4>", unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)
 def fetch_live_macro():
-    # Tickers for Feb 2026: DXY Future, 10Y Yield, Oil
     tickers = {"DXY": "DXH26.NYB", "10Y": "^TNX", "Oil": "CL=F"}
     data = {}
     for name, sym in tickers.items():
@@ -27,93 +26,84 @@ def fetch_live_macro():
 
 live = fetch_live_macro()
 
-# --- PRE-CALCULATIONS (For Gauge) ---
-# Macro Logic: Base 50, +Pts for Lower, -Pts for Higher (or vice versa for DXY/Oil/10Y)
-# User Logic: M2 Higher -> -15, M2 Lower -> +15 | DXY Higher -> +15, DXY Lower -> -15
-m_points = 50
+# --- 1. STATE & CALCULATIONS (Hidden logic to feed the top gauge) ---
+# We use st.session_state or standard top-down flow to ensure the gauge reflects inputs below
+m_points = 50 
 
-# We set these as defaults based on the MoM direction retrieved
-# Global M2 and Fed Net logic (Manual entry for now, as live MoM is often delayed)
-m2_dir = "Higher" if live.get("m2_mom", 1.7) > -15 else "Lower"
-fed_dir = "Higher" if live.get("fed_mom", -0.5) > -7 else "Lower"
-
-# Emotion (Fear & Greed API)
+# Fear & Greed API
 try:
     e_res = requests.get("https://api.alternative.me/fng/").json()
     e_score = int(e_res['data'][0]['value'])
-except: e_score = 7 # Feb 2026 Extreme Fear
+except: e_score = 40
 
-# --- GAUGE (MOVED TO TOP) ---
+t_score = 36 # Fixed CBBI
+
+# --- 2. THE TOP GAUGE ---
 st.title("⚒️ METAL Index")
+gauge_placeholder = st.empty() # Placeholder to render gauge AFTER inputs are processed
 
-# Component Scores for Gauge
-t_score = 36 # Fixed CBBI value
-# Placeholders for A and L that update based on main page sliders below
-a_score_placeholder = st.empty()
-l_score_placeholder = st.empty()
-
-# --- M: MACRO (POINTS SYSTEM) ---
+# --- 3. HORIZONTAL METAL COLUMNS ---
 st.markdown("---")
-neon_header("Macro")
-m_cols = st.columns(5)
+col_m, col_e, col_t, col_a, col_l = st.columns(5)
 
-with m_cols[0]:
-    m2_choice = st.radio(f"Global M2 (Ref: 1.73%)", ["Higher", "Lower"], index=0, horizontal=True)
+with col_m:
+    neon_header("Macro")
+    # Vertically listed subcomponents with manual toggles
+    m2_choice = st.radio(f"M2 (Ref: 1.73%)", ["Higher", "Lower"], index=0, key="m2")
+    fed_choice = st.radio(f"Fed Net (Ref: -0.57%)", ["Higher", "Lower"], index=0, key="fed")
+    dxy_choice = st.radio(f"DXY ({live['DXY_mom']}%)", ["Higher", "Lower"], index=1, key="dxy")
+    oil_choice = st.radio(f"Oil ({live['Oil_mom']}%)", ["Higher", "Lower"], index=1, key="oil")
+    teny_choice = st.radio(f"10Y ({live['10Y_mom']}%)", ["Higher", "Lower"], index=1, key="10y")
+    
+    # Calculate M Score
     m_points += -15 if m2_choice == "Higher" else 15
-
-with m_cols[1]:
-    fed_choice = st.radio(f"Fed Net (Ref: -0.57%)", ["Higher", "Lower"], index=0, horizontal=True)
     m_points += -7 if fed_choice == "Higher" else 7
-
-with m_cols[2]:
-    dxy_choice = st.radio(f"DXY ({live['DXY_mom']}%)", ["Higher", "Lower"], index=1, horizontal=True)
     m_points += 15 if dxy_choice == "Higher" else -15
-
-with m_cols[3]:
-    oil_choice = st.radio(f"Oil ({live['Oil_mom']}%)", ["Higher", "Lower"], index=1, horizontal=True)
     m_points += 3 if oil_choice == "Higher" else -3
-
-with m_cols[4]:
-    teny_choice = st.radio(f"10Y Yield ({live['10Y_mom']}%)", ["Higher", "Lower"], index=1, horizontal=True)
     m_points += 10 if teny_choice == "Higher" else -10
+    m_score = max(0, min(100, m_points))
 
-m_score = max(0, min(100, m_points))
-
-# --- E, T, A, L (MAIN PAGE) ---
-st.markdown("---")
-c_e, c_t, c_a, c_l = st.columns(4)
-
-with c_e:
+with col_e:
     neon_header("Emotion")
     st.metric("Fear & Greed", e_score)
+    st.caption("Sentiment Score")
 
-with c_t:
+with col_t:
     neon_header("Technicals")
     st.metric("CBBI Index", t_score)
+    st.caption("On-Chain Risk")
 
-with c_a:
+with col_a:
     neon_header("Adoption")
-    raw_a = st.slider("Power Law Oscillator", -1.0, 1.0, 0.48, step=0.01)
+    raw_a = st.slider("Power Law Osc.", -1.0, 1.0, 0.48, step=0.01)
     a_score = int((raw_a + 1) * 50)
-    st.caption(f"Score: {a_score}")
+    st.link_button("View Chart", "https://charts.bitbo.io/power-law-oscillator/")
 
-with c_l:
+with col_l:
     neon_header("Leverage")
-    # Manual CDRI Slider per request (Removing 0-100 title)
     l_score = st.slider("CDRI Value", 0, 100, 50)
-    st.caption("[Direct CDRI Chart](https://www.coinglass.com/pro/i/CDRI)")
+    st.link_button("View CDRI", "https://www.coinglass.com/pro/i/CDRI")
 
-# --- RENDER GAUGE AT TOP (USING OVERRIDES) ---
+# --- 4. RENDER GAUGE INTO PLACEHOLDER ---
 final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
-color = "#FF0000" if final_risk >= 70 else ("#00FF00" if final_risk <= 30 else "#007BFF")
 
-# Gauge is actually rendered here via a trick to appear at top
-st.markdown("<br>", unsafe_allow_html=True)
-fig = go.Figure(go.Indicator(
-    mode = "gauge+number", value = final_risk,
-    title = {'text': f"<b>METAL RISK</b><br><span style='font-size:0.6em;color:gray'>M:{m_score} | E:{e_score} | T:{t_score} | A:{a_score} | L:{l_score}</span>"},
-    gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': color}}
-))
-st.sidebar.plotly_chart(fig, use_container_width=True)
-# Also showing a small one at top of page for visibility
-st.plotly_chart(fig, use_container_width=True)
+if final_risk >= 70: color, label = "#FF0000", "HIGH RISK"
+elif final_risk <= 30: color, label = "#00FF00", "LOW RISK"
+else: color, label = "#007BFF", "MEDIUM RISK"
+
+with gauge_placeholder.container():
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number", value = final_risk,
+        title = {'text': f"<b>{label}</b><br><span style='font-size:0.7em;color:gray'>M:{m_score} | E:{e_score} | T:{t_score} | A:{a_score} | L:{l_score}</span>", 'font': {'color': color}},
+        gauge = {
+            'axis': {'range': [0, 100]},
+            'bar': {'color': color},
+            'steps': [
+                {'range': [0, 30], 'color': "rgba(0, 255, 0, 0.1)"},
+                {'range': [30, 70], 'color': "rgba(0, 0, 255, 0.1)"},
+                {'range': [70, 100], 'color': "rgba(255, 0, 0, 0.1)"}
+            ]
+        }
+    ))
+    fig.update_layout(height=350, margin=dict(t=50, b=0))
+    st.plotly_chart(fig, use_container_width=True)
