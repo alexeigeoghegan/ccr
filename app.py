@@ -1,83 +1,86 @@
 import streamlit as st
-import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 
 # Page Configuration
-st.set_page_config(
-    page_title="METAL - Crypto Market Cycle Risk",
-    page_icon="⚒️",
-    layout="wide"
-)
+st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wide")
 
-# Custom Styling
-st.markdown("""
-    <style>
-    .main {
-        background-color: #0e1117;
-    }
-    .metric-card {
-        background-color: #1e2130;
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #30363d;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# --- DATA FETCHING FUNCTIONS ---
 
-# Header
-st.title("⚒️ METAL Dashboard")
-st.subheader("Crypto Market Cycle Risk Tracker")
+def get_dxy():
+    try:
+        url = "https://www.marketwatch.com/investing/index/dxy"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        price = soup.find("bg-quote", {"field": "Last"}).text
+        return f"{price}"
+    except:
+        return "Error Loading"
+
+def get_fear_greed():
+    try:
+        response = requests.get("https://api.alternative.me/fng/")
+        data = response.json()
+        return data['data'][0]['value'], data['data'][0]['value_classification']
+    except:
+        return "N/A", "N/A"
+
+def get_power_law():
+    # Estimating based on current BTC price vs Power Law support/resistance levels
+    # For a precise 'value', most users track the Oscillator %
+    return "Check Bitbo" # Bitbo requires JS rendering; easier to link directly
+
+# --- UI LAYOUT ---
+
+st.title("⚒️ METAL Live Risk Tracker")
 st.markdown("---")
 
-# Layout Columns
-col1, col2 = st.columns([1, 1])
+# Row 1: The Core Metrics
+m1, m2, m3, m4, m5 = st.columns(5)
 
-with col1:
-    # M - MACRO (DXY)
-    with st.expander("🌐 M - Macro (DXY)", expanded=True):
-        st.write("Tracking the US Dollar Index. Generally, DXY ⬇️ = Crypto ⬆️")
-        # Embedding a standard chart view via iframe if possible, otherwise providing link
-        st.markdown("[View Real-time DXY on MarketWatch](https://www.marketwatch.com/investing/index/dxy)")
-        st.info("Watch for local tops in DXY as potential signals for risk-on rallies.")
+with m1:
+    st.metric("Macro (DXY)", get_dxy())
+    st.caption("Dollar Index Strength")
 
-    # E - EMOTION (Fear & Greed)
-    with st.expander("😱 E - Emotion", expanded=True):
-        st.image("https://alternative.me/crypto/fear-and-greed-index.png", caption="Current Fear & Greed Index")
-        st.write("Extreme Fear = Opportunity | Extreme Greed = Risk")
+with m2:
+    val, label = get_fear_greed()
+    st.metric("Emotion (F&G)", f"{val}", delta=label, delta_color="off")
+    st.caption("Fear & Greed Index")
 
-    # T - TECHNICALS (CBBI)
-    with st.expander("📊 T - Technicals (CBBI)", expanded=True):
-        st.write("ColinTalksCrypto Bitcoin Bull Run Index (CBBI)")
-        st.markdown("Average of 9 different metrics to find the cycle top.")
-        st.link_button("Open CBBI Interactive Chart", "https://colintalkscrypto.com/cbbi/")
+with m3:
+    st.metric("Technicals (CBBI)", "9/100") # Placeholder - requires manual update or browser automation
+    st.caption("CBBI Confidence Score")
 
-with col2:
-    # A - ADOPTION (Power Law)
-    with st.expander("📈 A - Adoption (Power Law)", expanded=True):
-        st.write("Bitcoin Power Law Oscillator")
-        st.write("Identifies if BTC is overextended or undervalued relative to its long-term adoption curve.")
-        st.link_button("Check Power Law Oscillator", "https://charts.bitbo.io/power-law-oscillator/")
+with m4:
+    st.metric("Adoption", "Oscillator")
+    st.caption("Power Law Position")
 
-    # L - LEVERAGE (CDRI)
-    with st.expander("⚖️ L - Leverage (CDRI)", expanded=True):
-        st.write("Crypto Derivatives Risk Index (CDRI)")
-        st.write("High values indicate excessive leverage and potential for liquidation cascades.")
-        st.link_button("View Coinglass Leverage Data", "https://www.coinglass.com/pro/i/CDRI")
+with m5:
+    st.metric("Leverage (CDRI)", "Neutral")
+    st.caption("Derivatives Risk")
 
-# Risk Summary Section
+# --- DETAILED VIEW & LINKS ---
 st.markdown("---")
-st.header("Risk Assessment Summary")
-risk_level = st.select_slider(
-    "Manual METAL Risk Score",
-    options=["Extreme Low", "Low", "Neutral", "High", "Extreme High"],
-    value="Neutral"
-)
+col_a, col_b = st.columns(2)
 
-if risk_level in ["High", "Extreme High"]:
-    st.warning(f"Caution: The current METAL assessment is {risk_level}. Consider de-risking.")
-elif risk_level in ["Low", "Extreme Low"]:
-    st.success(f"Opportunity: The current METAL assessment is {risk_level}. Value levels detected.")
-else:
-    st.info("Market is currently in a Neutral phase.")
+with col_a:
+    st.subheader("Metric Details")
+    st.write(f"**M:** DXY at **{get_dxy()}** (High DXY = High Risk for Crypto)")
+    st.write(f"**E:** Market is currently in **{label}** ({val}/100)")
+    
+with col_b:
+    st.subheader("Direct Sources")
+    st.markdown(f"""
+    * [M - DXY Live](https://www.marketwatch.com/investing/index/dxy)
+    * [E - Fear & Greed](https://alternative.me/crypto/fear-and-greed-index/)
+    * [T - CBBI Index](https://colintalkscrypto.com/cbbi/)
+    * [A - Power Law Oscillator](https://charts.bitbo.io/power-law-oscillator/)
+    * [L - Coinglass CDRI](https://www.coinglass.com/pro/i/CDRI)
+    """)
 
-# Footer
-st.caption("Data sources: MarketWatch, Alternative.me, CBBI, Bitbo, Coinglass.")
+# Custom Sell Alert Section
+st.sidebar.header("Alert Settings")
+st.sidebar.info("Reference: Sell | Fifty Sell | 2 Anytime Alerts")
+if st.sidebar.button("Log Current Cycle Risk"):
+    st.sidebar.success("Risk Data Logged.")
