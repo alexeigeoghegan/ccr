@@ -8,26 +8,9 @@ from datetime import datetime
 # Page Configuration
 st.set_page_config(page_title="METAL Index", page_icon="⚒️", layout="wide")
 
-# --- USER CONFIGURATION ---
-COINGLASS_API_KEY = "YOUR_API_KEY_HERE" # Paste your key to enable REST fetch
-
 # Custom Neon Header Function
 def neon_header(text):
     st.markdown(f"<h4><span style='color: #FF5F1F; text-shadow: 0 0 5px #FF5F1F;'>{text[0]}</span>{text[1:]}</h4>", unsafe_allow_html=True)
-
-@st.cache_data(ttl=3600)
-def fetch_rest_cdri():
-    """Fetches CDRI using Coinglass REST API (Requires Key)."""
-    if COINGLASS_API_KEY == "YOUR_API_KEY_HERE":
-        return 50 # Fallback if no key provided
-    try:
-        url = "https://open-api-v4.coinglass.com/api/futures/cdri-index/history"
-        headers = {"accept": "application/json", "CG-API-KEY": COINGLASS_API_KEY}
-        response = requests.get(url, headers=headers).json()
-        # Grabbing 'Yesterday' close from the REST response
-        return int(response['data'][-2]['close'])
-    except:
-        return 50
 
 @st.cache_data(ttl=300)
 def fetch_live_data():
@@ -41,29 +24,27 @@ def fetch_live_data():
                 data[f"{name}_mom"] = round(((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100, 2)
         except: data[f"{name}_mom"] = 0.0
     
-    # POWER LAW: Syncing with Bitbo's current fair value center
-    days_since_genesis = (datetime.now() - datetime(2009, 1, 3)).days
+    # POWER LAW: Adjusted to match Bitbo's current fair value center
+    days = (datetime.now() - datetime(2009, 1, 3)).days
     if "BTC_price" in data:
-        # Bitbo Consistency: log10(Price) - (-17.015 + 5.82 * log10(days))
-        expected_log_price = -17.015 + 5.82 * np.log10(days_since_genesis)
-        data["power_law_osc"] = round(np.log10(data["BTC_price"]) - expected_log_price, 3)
+        expected_log = -17.015 + 5.82 * np.log10(days)
+        data["power_law_osc"] = round(np.log10(data["BTC_price"]) - expected_log, 3)
     return data
 
 live = fetch_live_data()
-rest_cdri = fetch_rest_cdri()
 
-# --- 1. STATE & CALCULATIONS ---
+# --- CALCULATIONS ---
 m_points = 50 
 try:
     e_score = int(requests.get("https://api.alternative.me/fng/").json()['data'][0]['value'])
 except: e_score = 40
 t_score = 36 
 
-# --- 2. TOP GAUGE ---
+# --- TOP GAUGE ---
 st.title("⚒️ METAL Index")
 gauge_placeholder = st.empty()
 
-# --- 3. HORIZONTAL METAL COLUMNS ---
+# --- HORIZONTAL COLUMNS ---
 st.markdown("---")
 col_m, col_e, col_t, col_a, col_l = st.columns(5)
 
@@ -96,11 +77,10 @@ with col_a:
 
 with col_l:
     neon_header("Leverage")
-    l_score = st.slider("CDRI Value", 0, 100, rest_cdri)
-    if COINGLASS_API_KEY != "YOUR_API_KEY_HERE":
-        st.success(f"REST API Live: {rest_cdri}")
+    l_score = st.slider("CDRI Value", 0, 100, 50)
+    st.link_button("View CDRI", "https://www.coinglass.com/pro/i/CDRI")
 
-# --- 4. RENDER GAUGE ---
+# --- RENDER GAUGE ---
 final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
 color, label = ("#FF0000", "HIGH RISK") if final_risk >= 70 else (("#00FF00", "LOW RISK") if final_risk <= 30 else ("#007BFF", "MEDIUM RISK"))
 
