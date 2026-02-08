@@ -46,7 +46,6 @@ live = fetch_live_data()
 st.markdown("<h1 style='text-align: center; color: white; margin-top: -30px;'>⚒️ <span style='color: #FF5F1F; text-shadow: 0 0 15px #FF5F1F;'>METAL</span> GAUGE</h1>", unsafe_allow_html=True)
 
 # --- 2. LAYOUT CONTAINERS ---
-# We define them in order but control the logic so data flows correctly
 gauge_container = st.container()
 input_container = st.container()
 
@@ -96,7 +95,7 @@ with input_container:
         st.metric("Power Law", f"{osc_raw:.1f}")
 
     with col_l:
-        l_raw = st.slider("CDRI Visual Ref", 0, 100, 48, key="l_slider")
+        l_raw = st.slider("CDRI", 0, 100, 48, key="l_slider")
         st.link_button("View Source", "https://www.coinglass.com/pro/i/CDRI")
 
 # --- 4. GAUGE & OVERRIDES (TOP VISUALS) ---
@@ -128,8 +127,6 @@ with gauge_container:
         ))
         fig.update_layout(height=400, margin=dict(t=50, b=0, l=50, r=50), paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
-        
-        st.markdown("<p style='text-align: center; color: gray; font-size: 0.8em; text-transform: uppercase; margin-top: -20px;'>Manual Override Values</p>", unsafe_allow_html=True)
 
 # CSS for final visual polish and ordering
 st.markdown("""
