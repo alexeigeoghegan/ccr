@@ -7,80 +7,76 @@ st.set_page_config(page_title="METAL Dashboard", page_icon="⚒️", layout="wid
 
 # --- DATA FETCHING FUNCTIONS ---
 
-def get_dxy():
+def get_market_value(url, selector, attr=None):
+    """Helper to scrape specific values from market sites."""
     try:
-        url = "https://www.marketwatch.com/investing/index/dxy"
         headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(response.text, 'html.parser')
-        price = soup.find("bg-quote", {"field": "Last"}).text
-        return f"{price}"
+        element = soup.select_one(selector)
+        return element.get(attr) if attr else element.text.strip()
     except:
-        return "Error Loading"
+        return "N/A"
 
-def get_fear_greed():
-    try:
-        response = requests.get("https://api.alternative.me/fng/")
-        data = response.json()
-        return data['data'][0]['value'], data['data'][0]['value_classification']
-    except:
-        return "N/A", "N/A"
+# Fetching the specific values you requested
+dxy_val = get_market_value("https://www.marketwatch.com/investing/index/dxy", "bg-quote[field='Last']")
+ten_y_val = get_market_value("https://www.marketwatch.com/investing/bond/tmubmusd10y?countrycode=bx", "bg-quote[field='Last']")
+oil_val = get_market_value("https://www.marketwatch.com/investing/future/crude%20oil%20-%20electronic", "bg-quote[field='Last']")
 
-def get_power_law():
-    # Estimating based on current BTC price vs Power Law support/resistance levels
-    # For a precise 'value', most users track the Oscillator %
-    return "Check Bitbo" # Bitbo requires JS rendering; easier to link directly
+# --- TOP BANNER (Macro Indicators) ---
+st.markdown("### 🌍 Global Market Pulse")
+b1, b2, b3 = st.columns(3)
 
-# --- UI LAYOUT ---
+with b1:
+    st.metric("Dollar Index (DXY)", f"{dxy_val}")
+with b2:
+    st.metric("US 10Y Yield", f"{ten_y_val}%")
+with b3:
+    st.metric("WTI Crude Oil", f"${oil_val}")
 
-st.title("⚒️ METAL Live Risk Tracker")
 st.markdown("---")
 
-# Row 1: The Core Metrics
+# --- METAL CORE DASHBOARD ---
+st.title("⚒️ METAL Dashboard")
 m1, m2, m3, m4, m5 = st.columns(5)
 
+# (Reusing Fear & Greed API for the Emotion section)
+def get_fear_greed():
+    try:
+        data = requests.get("https://api.alternative.me/fng/").json()
+        return data['data'][0]['value'], data['data'][0]['value_classification']
+    except: return "N/A", "N/A"
+
+fg_val, fg_label = get_fear_greed()
+
 with m1:
-    st.metric("Macro (DXY)", get_dxy())
-    st.caption("Dollar Index Strength")
+    st.subheader("M")
+    st.write("**Macro**")
+    st.caption(f"DXY: {dxy_val}")
 
 with m2:
-    val, label = get_fear_greed()
-    st.metric("Emotion (F&G)", f"{val}", delta=label, delta_color="off")
-    st.caption("Fear & Greed Index")
+    st.subheader("E")
+    st.write(f"**Emotion**")
+    st.write(f"{fg_val} ({fg_label})")
 
 with m3:
-    st.metric("Technicals (CBBI)", "9/100") # Placeholder - requires manual update or browser automation
-    st.caption("CBBI Confidence Score")
+    st.subheader("T")
+    st.write("**Technical**")
+    st.caption("CBBI Score")
 
 with m4:
-    st.metric("Adoption", "Oscillator")
-    st.caption("Power Law Position")
+    st.subheader("A")
+    st.write("**Adoption**")
+    st.caption("Power Law")
 
 with m5:
-    st.metric("Leverage (CDRI)", "Neutral")
-    st.caption("Derivatives Risk")
+    st.subheader("L")
+    st.write("**Leverage**")
+    st.caption("CDRI Risk")
 
-# --- DETAILED VIEW & LINKS ---
 st.markdown("---")
-col_a, col_b = st.columns(2)
-
-with col_a:
-    st.subheader("Metric Details")
-    st.write(f"**M:** DXY at **{get_dxy()}** (High DXY = High Risk for Crypto)")
-    st.write(f"**E:** Market is currently in **{label}** ({val}/100)")
-    
-with col_b:
-    st.subheader("Direct Sources")
-    st.markdown(f"""
-    * [M - DXY Live](https://www.marketwatch.com/investing/index/dxy)
-    * [E - Fear & Greed](https://alternative.me/crypto/fear-and-greed-index/)
-    * [T - CBBI Index](https://colintalkscrypto.com/cbbi/)
-    * [A - Power Law Oscillator](https://charts.bitbo.io/power-law-oscillator/)
-    * [L - Coinglass CDRI](https://www.coinglass.com/pro/i/CDRI)
-    """)
-
-# Custom Sell Alert Section
-st.sidebar.header("Alert Settings")
-st.sidebar.info("Reference: Sell | Fifty Sell | 2 Anytime Alerts")
-if st.sidebar.button("Log Current Cycle Risk"):
-    st.sidebar.success("Risk Data Logged.")
+# Quick Links for Verification
+st.sidebar.markdown("### Quick Sources")
+st.sidebar.page_link("https://www.marketwatch.com/investing/index/dxy", label="DXY Chart")
+st.sidebar.page_link("https://www.marketwatch.com/investing/bond/tmubmusd10y", label="US 10Y Chart")
+st.sidebar.page_link("https://alternative.me/crypto/fear-and-greed-index/", label="Fear & Greed Index")
