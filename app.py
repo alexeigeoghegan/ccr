@@ -19,7 +19,6 @@ def neon_header(text, size="h4"):
             processed_words.append(highlighted)
     
     processed_text = " ".join(processed_words)
-    # Ensure "METAL" specifically glows if present as a full word
     processed_text = processed_text.replace("METAL", "<span style='color: #FF5F1F; text-shadow: 0 0 10px #FF5F1F;'>METAL</span>")
     st.markdown(f"<{size}>{processed_text}</{size}>", unsafe_allow_html=True)
 
@@ -43,7 +42,34 @@ def fetch_live_data():
 
 live = fetch_live_data()
 
-# --- 1. HORIZONTAL COMPONENT COLUMNS (RADIO LOGIC FIRST) ---
+# --- PRE-CALC RAW VALUES FOR OVERRIDE LABELS ---
+# These are initial values to show in brackets before the radio/slider interaction below.
+# For M, we use a snapshot of current logic.
+m_raw_init = 50 
+try:
+    e_raw = int(requests.get("https://api.alternative.me/fng/").json()['data'][0]['value'])
+except: e_raw = 40
+t_raw = 36 
+osc_raw = live.get("power_law_osc", 0.4)
+a_raw = int(np.clip((osc_raw + 1) * 50, 0, 100))
+l_raw = 48 
+
+# --- 1. TITLE & GAUGE (TOP) ---
+_, center_col, _ = st.columns([1, 2, 1])
+
+with center_col:
+    st.markdown("<h1 style='text-align: center; color: white; margin-bottom: 0px;'>⚒️ <span style='color: #FF5F1F; text-shadow: 0 0 15px #FF5F1F;'>METAL</span> GAUGE</h1>", unsafe_allow_html=True)
+    gauge_placeholder = st.empty()
+    
+    st.markdown("<p style='text-align: center; color: gray; font-size: 0.9em; margin-bottom: -10px; text-transform: uppercase; letter-spacing: 1px;'>Manual Override</p>", unsafe_allow_html=True)
+    ov1, ov2, ov3, ov4, ov5 = st.columns(5)
+    m_score = ov1.number_input("M", 0, 100, 40)
+    e_score = ov2.number_input("E", 0, 100, 7)
+    t_score = ov3.number_input("T", 0, 100, 36)
+    a_score = ov4.number_input("A", 0, 100, 38)
+    l_score = ov5.number_input("L", 0, 100, 48)
+
+# --- 2. HORIZONTAL COMPONENT COLUMNS (BOTTOM) ---
 st.markdown("---")
 col_m, col_e, col_t, col_a, col_l = st.columns(5)
 
@@ -55,56 +81,33 @@ with col_m:
     oil = st.radio(f"Oil ({live.get('Oil_mom', 0)}%)", ["Higher", "Lower"], index=1)
     teny = st.radio(f"10Y ({live.get('10Y_mom', 0)}%)", ["Higher", "Lower"], index=1)
     
-    # Corrected M-Logic: Starts at 50, then adds/subtracts based on liquidity impact
+    # Live M Logic update
     m_calc = 50 
-    m_calc += (-15 if m2 == "Higher" else 15)   # Higher M2 = More Liquidity = Lower Risk Score
-    m_calc += (-7 if fed == "Higher" else 7)    # Higher Fed Liquidity = Lower Risk
-    m_calc += (15 if dxy == "Higher" else -15)  # Higher DXY = Bad for Risk = Higher Risk
-    m_calc += (3 if oil == "Higher" else -3)    # Higher Oil = Inflationary = Higher Risk
-    m_calc += (10 if teny == "Higher" else -10) # Higher Yields = Bad for Risk = Higher Risk
-    m_raw = max(0, min(100, m_calc))
+    m_calc += (-15 if m2 == "Higher" else 15)
+    m_calc += (-7 if fed == "Higher" else 7)
+    m_calc += (15 if dxy == "Higher" else -15)
+    m_calc += (3 if oil == "Higher" else -3)
+    m_calc += (10 if teny == "Higher" else -10)
+    m_raw_final = max(0, min(100, m_calc))
 
 with col_e:
     neon_header("Emotion")
-    try:
-        e_raw = int(requests.get("https://api.alternative.me/fng/").json()['data'][0]['value'])
-    except: e_raw = 40
     st.metric("Fear & Greed", e_raw)
 
 with col_t:
     neon_header("Technicals")
-    t_raw = 36 
     st.metric("CBBI Index", t_raw)
 
 with col_a:
     neon_header("Adoption")
-    osc_raw = live.get("power_law_osc", 0.4)
-    a_raw = int(np.clip((osc_raw + 1) * 50, 0, 100))
     st.metric("Power Law", f"{osc_raw:.1f}")
 
 with col_l:
     neon_header("Leverage")
-    l_raw = 48 
     st.slider("CDRI Visual Ref", 0, 100, 50)
     st.link_button("View Source", "https://www.coinglass.com/pro/i/CDRI")
 
-# --- 2. CENTERED GAUGE & OVERRIDES ---
-st.markdown("---")
-_, center_col, _ = st.columns([1, 2, 1])
-
-with center_col:
-    st.markdown("<h1 style='text-align: center; color: white;'>⚒️ <span style='color: #FF5F1F; text-shadow: 0 0 15px #FF5F1F;'>METAL</span> GAUGE</h1>", unsafe_allow_html=True)
-    gauge_placeholder = st.empty()
-    
-    st.markdown("<p style='text-align: center; color: gray; font-size: 0.9em; margin-bottom: -10px; text-transform: uppercase; letter-spacing: 1px;'>Manual Override</p>", unsafe_allow_html=True)
-    ov1, ov2, ov3, ov4, ov5 = st.columns(5)
-    m_score = ov1.number_input(f"M ({m_raw})", 0, 100, 40)
-    e_score = ov2.number_input(f"E ({e_raw})", 0, 100, 7)
-    t_score = ov3.number_input(f"T ({t_raw})", 0, 100, 36)
-    a_score = ov4.number_input(f"A ({a_raw})", 0, 100, 38)
-    l_score = ov5.number_input(f"L ({l_raw})", 0, 100, 48)
-
-# --- 3. GAUGE RENDER ---
+# --- 3. GAUGE RENDERING LOGIC ---
 final_risk = round((m_score + e_score + t_score + a_score + l_score) / 5)
 color, label = ("#FF0000", "HIGH RISK") if final_risk >= 70 else (("#00FF00", "LOW RISK") if final_risk <= 30 else ("#007BFF", "MEDIUM RISK"))
 
@@ -120,6 +123,9 @@ with gauge_placeholder.container():
     ))
     fig.update_layout(height=450, margin=dict(t=100, b=0, l=50, r=50), paper_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig, use_container_width=True)
+
+# Update override labels with raw values in brackets (requires rerender logic or simple static display)
+st.sidebar.write(f"Raw Reference: M({m_raw_final}) E({e_raw}) T({t_raw}) A({a_raw}) L({l_raw})")
 
 # --- 4. DISCLAIMER ---
 st.markdown("<br><div style='color: gray; font-size: 0.7em; text-align: center;'><strong>NOT FINANCIAL ADVICE:</strong> Dashboard for educational use only. Sources: Yahoo Finance, Alternative.me, Bitbo.io, Coinglass.</div>", unsafe_allow_html=True)
